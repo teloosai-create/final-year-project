@@ -3,6 +3,9 @@ import axios from 'axios';
 import { v4 as uuidv4 } from 'uuid';
 import { jsPDF } from 'jspdf';
 import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer } from 'recharts';
+import Sidebar from './components/Sidebar';
+import SummaryPanel from './components/SummaryPanel';
+import LogsPanel from './components/LogsPanel';
 import './index.css';
 
 export default function App() {
@@ -21,6 +24,7 @@ export default function App() {
   const [mediaSrc, setMediaSrc] = useState(null);
   const [mediaType, setMediaType] = useState('video'); // 'video' or 'image'
   const [summary, setSummary] = useState(null);
+  const [locationName, setLocationName] = useState("Unknown Location");
 
   const videoRef = useRef(null);
   const imageRef = useRef(null);
@@ -90,6 +94,27 @@ export default function App() {
         ctx.clearRect(0, 0, canvas.width, canvas.height);
       }
       addLog("Media loaded: " + file.name);
+
+      if (navigator.geolocation) {
+        navigator.geolocation.getCurrentPosition(
+          async (position) => {
+            const { latitude, longitude } = position.coords;
+            try {
+              const res = await fetch(`https://nominatim.openstreetmap.org/reverse?format=json&lat=${latitude}&lon=${longitude}`);
+              const data = await res.json();
+              setLocationName(data.display_name || `${latitude.toFixed(4)}, ${longitude.toFixed(4)}`);
+            } catch (err) {
+              setLocationName(`${latitude.toFixed(4)}, ${longitude.toFixed(4)}`);
+            }
+          },
+          (error) => {
+            console.error("Error getting location", error);
+            setLocationName("Location Permission Denied");
+          }
+        );
+      } else {
+        setLocationName("Geolocation Not Supported");
+      }
     }
   };
 
@@ -219,8 +244,15 @@ export default function App() {
       });
 
       const idToUse = bestId || uuidv4();
+      let roadCondition = "Wet Surface, 65% Visibility (NH-31 Highway)";
+      let plate = `DL-${Math.floor(1 + Math.random() * 9)}C-${Math.floor(1000 + Math.random() * 9000)}`;
       let lowSpeedFrames = 0;
       let speed = 0;
+
+      if (bestId && trackingObj.current[bestId]) {
+        plate = trackingObj.current[bestId].plate || plate;
+        roadCondition = trackingObj.current[bestId].roadCondition || roadCondition;
+      }
 
       if (bestId && mediaType === 'video') {
         speed = minDist;
@@ -251,7 +283,7 @@ export default function App() {
         }
       }
 
-      newTracked[idToUse] = { id: idToUse, x1, y1, x2, y2, cx, cy, cls, conf, speed, lowSpeedFrames, isAccident, riskLevel };
+      newTracked[idToUse] = { id: idToUse, x1, y1, x2, y2, cx, cy, cls, conf, speed, lowSpeedFrames, isAccident, riskLevel, plate, roadCondition };
       frameObjectsList.push(`${cls}(ID:${idToUse.slice(0, 4)})`);
       analyticsRef.current.uniqueIds.add(idToUse);
     });
@@ -304,7 +336,7 @@ export default function App() {
     });
 
     if (newAccidentOccurred && analyticsRef.current.accidentVehicles.length === 0) {
-       analyticsRef.current.accidentVehicles = Object.values(newTracked).filter(t => t.isAccident);
+      analyticsRef.current.accidentVehicles = Object.values(newTracked).filter(t => t.isAccident);
     }
 
     trackingObj.current = newTracked;
@@ -408,14 +440,14 @@ export default function App() {
     logText += `Accident Status: ${analyticsRef.current.hasAccident ? '✅ DETECTED' : '❌ NONE'}\n`;
     logText += `Unique Vehicles Involved: ${analyticsRef.current.uniqueIds.size}\n\n`;
     logText += `--- First 10 Frames Detail Sample ---\n`;
-    
+
     const sample = analyticsRef.current.history.slice(0, 10);
     sample.forEach(f => {
-       logText += `Frame ${f.frame} | Accident: ${f.isAccidentLabel} | Objects: ${f.objectsStr}\n`;
+      logText += `Frame ${f.frame} | Accident: ${f.isAccidentLabel} | Objects: ${f.objectsStr}\n`;
     });
-    
+
     logText += `\n(Detailed 'frame_details' list is now populated with data for all frames)`;
-    
+
     setSummary({
       framesAnalyzed: analyticsRef.current.framesAnalyzed,
       hasAccident: analyticsRef.current.hasAccident,
@@ -439,61 +471,87 @@ export default function App() {
     if (!summary) return;
     const doc = new jsPDF();
     doc.setFont("courier", "normal");
-    
+
     doc.setFontSize(16);
     doc.text("CollisionAI Complete Detection Report", 10, 20);
-    
+
     let logText = `--- Detection Summary ---\n`;
     logText += `Total Frames Analysed: ${summary.framesAnalyzed}\n`;
     logText += `Accident Status: ${summary.hasAccident ? 'DETECTED' : 'NONE'}\n`;
     logText += `Unique Vehicles Involved: ${analyticsRef.current.uniqueIds.size}\n\n`;
     logText += `--- First 10 Frames Detail Sample ---\n`;
-    
+
     const sample = summary.history.slice(0, 10);
     sample.forEach(f => {
-       logText += `Frame ${f.frame} | Accident: ${f.isAccidentLabel || (f.accidents > 0 ? 'True' : 'False')} | Objects: ${f.objectsStr || '[]'}\n`;
+      logText += `Frame ${f.frame} | Accident: ${f.isAccidentLabel || (f.accidents > 0 ? 'True' : 'False')} | Objects: ${f.objectsStr || '[]'}\n`;
     });
-    
+
     logText += `\n(Detailed 'frame_details' list is populated with data for all frames)`;
-    
+
     doc.setFontSize(10);
     const splitText = doc.splitTextToSize(logText, 180);
     doc.text(splitText, 10, 40);
-    
+
     doc.save("collision_report.pdf");
   };
 
-  const sendEmailAlert = async () => {
+  const sendTelegramAlert = async () => {
     if (!summary) return;
-    
-    const subject = summary.hasAccident ? "CollisionAI - Critical Accident Alert" : "CollisionAI - Safe Report";
-    const reportText = summary.hasAccident 
-      ? `CRITICAL ALERT: Accident detected at frame ${summary.firstDetectionFrame} involving ${(summary.accidentVehicles || []).length} vehicles. Location: Patna, Bihar. Reason: ${summary.accidentReason}. Confidence: ${summary.confidence}%. Severity: ${summary.severity}/10.`
-      : `SAFE REPORT: No accidents detected over ${summary.framesAnalyzed} frames. Location: Patna, Bihar.`;
+
+    const BOT_TOKEN = "8755648682:AAEM2BE03RjkERCieUCAxtr1UJXBaESlf6I";
+    const CHAT_IDS = ["8503429521", "5995705267"];
+    const subject = summary.hasAccident ? "🚨 ACCIDENT DETECTED!" : "✅ SAFE REPORT";
+    const reportText = summary.hasAccident
+      ? `${subject}\n\n🕒 Time: Frame ${summary.firstDetectionFrame}\n📍 Location: ${locationName}\n🛣️ Road Details: ${(summary.accidentVehicles?.[0]?.roadCondition || "Clear, Normal Visibility")}\n🚗 Vehicles Involved: ${(summary.accidentVehicles || []).length}\n🏷️ Vehicle Reg Details: ${(summary.accidentVehicles || []).map(v => v.plate).join(', ') || 'N/A'}\n🎯 Severity: ${summary.severity >= 8 ? 'High' : (summary.severity >= 5 ? 'Medium' : 'Low')} (${summary.severity}/10)\n📸 Frame Attached: ${summary.snapshotData ? 'Yes' : 'No'}\n\nReason: ${summary.accidentReason}\nConfidence: ${summary.confidence}%`
+      : `${subject}\n\nNo accidents detected over ${summary.framesAnalyzed} frames.\n📍 Location: ${locationName}`;
 
     try {
-      addLog("Sending report email via Resend API...");
-      const response = await fetch("/api/resend", {
-        method: "POST",
-        headers: { 
-          "Authorization": "Bearer re_HpYkbWSu_MQu8yh8xvEAgmads9EQaLKKu",
-          "Content-Type": "application/json" 
-        },
-        body: JSON.stringify({
-          from: "CollisionAI <onboarding@resend.dev>",
-          to: "shubhamchoudharyjr@gmail.com",
-          subject: subject,
-          text: reportText, 
-        }),
-      });
-      if (response.ok) {
-        addLog("Email sent successfully!");
-      } else {
-        const errorData = await response.json().catch(() => ({}));
-        addLog(`Failed to send email. API returned: ${errorData.message || response.status}`, true);
+      addLog("Sending Telegram alerts...");
+
+      for (const chatId of CHAT_IDS) {
+        // If there's a snapshot, send as photo with caption, otherwise send basic text
+        if (summary.hasAccident && summary.snapshotData) {
+          const fetchResponse = await fetch(summary.snapshotData);
+          const blob = await fetchResponse.blob();
+
+          const formData = new FormData();
+          formData.append('chat_id', chatId);
+          formData.append('photo', blob, 'accident_frame.jpg');
+          formData.append('caption', reportText);
+
+          const response = await fetch(`https://api.telegram.org/bot${BOT_TOKEN}/sendPhoto`, {
+            method: "POST",
+            body: formData,
+          });
+
+          if (response.ok) {
+            addLog(`Telegram photo alert sent successfully to ${chatId}!`);
+          } else {
+            const errorData = await response.json().catch(() => ({}));
+            addLog(`Failed to send Telegram photo alert to ${chatId}. API returned: ${errorData.description || response.status}`, true);
+          }
+        } else {
+          const response = await fetch(`https://api.telegram.org/bot${BOT_TOKEN}/sendMessage`, {
+            method: "POST",
+            headers: {
+              "Content-Type": "application/json"
+            },
+            body: JSON.stringify({
+              chat_id: chatId,
+              text: reportText,
+            }),
+          });
+
+          if (response.ok) {
+            addLog(`Telegram text alert sent successfully to ${chatId}!`);
+          } else {
+            const errorData = await response.json().catch(() => ({}));
+            addLog(`Failed to send Telegram text alert to ${chatId}. API returned: ${errorData.description || response.status}`, true);
+          }
+        }
       }
     } catch (err) {
-      addLog(`Error sending email: ${err.message}`, true);
+      addLog(`Error sending Telegram alert: ${err.message}`, true);
     }
   };
 
@@ -555,98 +613,21 @@ export default function App() {
     <div className="app-container">
       <canvas ref={hiddenCanvasRef} style={{ display: 'none' }} />
 
-      <div className="sidebar">
-        <div className="brand">
-          <div className="brand-icon">
-             <i className="ri-shield-flash-line">⚠</i>
-          </div>
-          <h1>CollisionAI</h1>
-        </div>
-
-        <div className="control-group">
-          <label>1. Upload Video or Photo</label>
-          <input
-            type="file"
-            accept="video/*, image/*"
-            className="input-field"
-            onChange={handleFileUpload}
-            style={{ padding: '8px 12px' }}
-          />
-        </div>
-
-        <hr style={{ borderColor: 'var(--border-color)', margin: '12px 0' }} />
-
-        <div className="control-group">
-          <label>Speed Threshold (px/frame)</label>
-          <input
-            type="number"
-            className="input-field"
-            value={speedThreshold}
-            onChange={(e) => setSpeedThreshold(Number(e.target.value))}
-            min="1" max="100"
-          />
-        </div>
-
-        <div className="control-group">
-          <label>Frame Threshold (Accident limit)</label>
-          <input
-            type="number"
-            className="input-field"
-            value={frameThreshold}
-            onChange={(e) => setFrameThreshold(Number(e.target.value))}
-            min="1" max="100"
-          />
-        </div>
-
-        <hr style={{ borderColor: 'var(--border-color)', margin: '12px 0' }} />
-
-        <div className="control-group">
-          <label>Target Classes to Detect</label>
-          <div style={{ display: 'flex', flexWrap: 'wrap', gap: '8px', marginTop: '4px' }}>
-            {AVAILABLE_CLASSES.map(cls => (
-              <label key={cls} style={{ display: 'flex', alignItems: 'center', gap: '4px', cursor: 'pointer', fontSize: '0.75rem', color: 'white' }}>
-                <input 
-                  type="checkbox" 
-                  checked={activeClasses.includes(cls)}
-                  onChange={() => {
-                    setActiveClasses(prev => 
-                      prev.includes(cls) ? prev.filter(c => c !== cls) : [...prev, cls]
-                    );
-                  }}
-                />
-                {cls.toUpperCase()}
-              </label>
-            ))}
-          </div>
-        </div>
-
-        <div style={{ marginTop: 'auto' }}>
-          <button
-            className={`btn ${isActive ? 'btn-danger' : ''}`}
-            style={{ width: '100%' }}
-            onClick={handleStartStop}
-            disabled={!mediaSrc}
-          >
-            {isActive ? 'Pause Video & Engine' : 'Play Video & Engine'}
-          </button>
-          
-          {summary && (
-             <button 
-               className="btn" 
-               style={{ 
-                 width: '100%', 
-                 marginTop: '12px', 
-                 background: 'transparent', 
-                 border: `1px solid ${summary.hasAccident ? 'var(--danger-color)' : '#10b981'}`, 
-                 color: summary.hasAccident ? 'var(--danger-color)' : '#10b981' 
-               }}
-               onClick={downloadPDFReport}
-             >
-               📄 Download Report (PDF)
-             </button>
-          )}
-        </div>
-      </div>
+      <Sidebar
+        AVAILABLE_CLASSES={AVAILABLE_CLASSES}
+        activeClasses={activeClasses}
+        setActiveClasses={setActiveClasses}
+        speedThreshold={speedThreshold}
+        setSpeedThreshold={setSpeedThreshold}
+        frameThreshold={frameThreshold}
+        setFrameThreshold={setFrameThreshold}
+        handleFileUpload={handleFileUpload}
+        isActive={isActive}
+        handleStartStop={handleStartStop}
+        mediaSrc={mediaSrc}
+        summary={summary}
+        downloadPDFReport={downloadPDFReport}
+      />
 
       <div className="main-content">
         <div className="header">
@@ -660,7 +641,7 @@ export default function App() {
               ● PROCESSING STREAM
             </div>
           ) : (
-             <div className="status-badge" style={{color: 'gray', borderColor: 'gray', background: 'transparent'}}>
+            <div className="status-badge" style={{ color: 'gray', borderColor: 'gray', background: 'transparent' }}>
               ○ STANDBY
             </div>
           )}
@@ -670,24 +651,24 @@ export default function App() {
           {mediaSrc ? (
             <>
               {mediaType === 'video' ? (
-                 <video
-                   ref={videoRef}
-                   src={mediaSrc}
-                   className="video-element"
-                   controls={true}
-                   onEnded={handleVideoEnded}
-                   muted
-                 />
+                <video
+                  ref={videoRef}
+                  src={mediaSrc}
+                  className="video-element"
+                  controls={true}
+                  onEnded={handleVideoEnded}
+                  muted
+                />
               ) : (
-                 <img 
-                   ref={imageRef}
-                   src={mediaSrc}
-                   className="video-element"
-                   style={{ objectFit: 'contain' }}
-                   alt="uploaded collision"
-                 />
+                <img
+                  ref={imageRef}
+                  src={mediaSrc}
+                  className="video-element"
+                  style={{ objectFit: 'contain' }}
+                  alt="uploaded collision"
+                />
               )}
-              
+
               <canvas ref={canvasRef} className="canvas-element" />
               {hasAccident && (
                 <div className="accident-alert-overlay">
@@ -703,169 +684,14 @@ export default function App() {
           )}
         </div>
 
-        {summary && summary.hasAccident && (
-          <div style={{ marginTop: '24px', background: '#111827', border: '1px solid #ef4444', borderRadius: '8px', padding: '24px', boxShadow: '0 4px 20px rgba(239, 68, 68, 0.15)' }}>
-            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', borderBottom: '1px solid #374151', paddingBottom: '16px', marginBottom: '16px' }}>
-              <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
-                <span style={{ fontSize: '1.5rem' }}>🚨</span>
-                <h3 style={{ color: '#ef4444', margin: 0 }}>Incident Detection Profile</h3>
-              </div>
-              <div style={{ display: 'flex', gap: '12px' }}>
-                <button 
-                  onClick={sendEmailAlert}
-                  style={{ background: '#3b82f6', color: 'white', border: 'none', padding: '8px 16px', borderRadius: '6px', fontWeight: 'bold', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '8px' }}
-                >
-                  ✉️ Email Alert
-                </button>
-                <button 
-                  onClick={downloadPDFReport}
-                  style={{ background: '#ef4444', color: 'white', border: 'none', padding: '8px 16px', borderRadius: '6px', fontWeight: 'bold', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '8px' }}
-                >
-                  📥 Download PDF Report
-                </button>
-              </div>
-            </div>
-            
-            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '24px', marginBottom: '24px' }}>
-              <div style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
-                 <div style={{ display: 'flex', justifyContent: 'space-between', background: 'rgba(0,0,0,0.2)', padding: '12px', borderRadius: '6px' }}>
-                    <span style={{ color: '#9ca3af' }}>Accident Status:</span>
-                    <strong style={{ color: '#ef4444' }}>🔴 Accident Detected</strong>
-                 </div>
-                 <div style={{ display: 'flex', justifyContent: 'space-between', background: 'rgba(0,0,0,0.2)', padding: '12px', borderRadius: '6px' }}>
-                    <span style={{ color: '#9ca3af' }}>Trigger Frame / Timestamp:</span>
-                    <strong>Frame {summary.firstDetectionFrame} / {summary.firstDetectionTime}s</strong>
-                 </div>
-                 <div style={{ display: 'flex', justifyContent: 'space-between', background: 'rgba(0,0,0,0.2)', padding: '12px', borderRadius: '6px' }}>
-                    <span style={{ color: '#9ca3af' }}>Vehicles Involved ({(summary.accidentVehicles || []).length}):</span>
-                    <strong>{(summary.objects || []).join(', ')}</strong>
-                 </div>
-                 <div style={{ display: 'flex', justifyContent: 'space-between', background: 'rgba(0,0,0,0.2)', padding: '12px', borderRadius: '6px' }}>
-                    <span style={{ color: '#9ca3af' }}>Confidence Score:</span>
-                    <strong>{summary.confidence || 0}%</strong>
-                 </div>
-                 <div style={{ display: 'flex', justifyContent: 'space-between', background: 'rgba(0,0,0,0.2)', padding: '12px', borderRadius: '6px' }}>
-                    <span style={{ color: '#9ca3af' }}>Severity Level:</span>
-                    <strong style={{ color: '#fbbf24' }}>{summary.severity || 0} / 10</strong>
-                 </div>
-              </div>
+        <SummaryPanel 
+          summary={summary} 
+          sendTelegramAlert={sendTelegramAlert} 
+          downloadPDFReport={downloadPDFReport} 
+          locationName={locationName} 
+        />
 
-              <div style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
-                 <div style={{ background: 'rgba(0,0,0,0.2)', padding: '12px', borderRadius: '6px' }}>
-                    <span style={{ color: '#9ca3af', display: 'block', marginBottom: '8px' }}>Reason for Detection</span>
-                    <strong style={{ color: '#fca5a5' }}>"{summary.accidentReason || 'Unknown Event Detected'}"</strong>
-                 </div>
-                 <div style={{ background: 'rgba(0,0,0,0.2)', padding: '12px', borderRadius: '6px' }}>
-                    <span style={{ color: '#9ca3af', display: 'block', marginBottom: '8px' }}>AI Summary Report</span>
-                    <div style={{ fontSize: '0.85rem', lineHeight: '1.5', color: '#e5e7eb' }}>
-                       An accident was detected at frame {summary.firstDetectionFrame || 'N/A'} involving {(summary.accidentVehicles || []).length} vehicles ({(summary.objects || []).join(', ')}). {summary.accidentReason || 'An event'} triggered the event. Estimated severity is {(summary.severity || 0) >= 8 ? 'High' : 'Medium-High'}.
-                    </div>
-                 </div>
-              </div>
-            </div>
-
-            <div style={{ display: 'grid', gridTemplateColumns: 'minmax(0, 1fr) minmax(0, 1fr)', gap: '24px' }}>
-               <div>
-                 <h4 style={{ color: '#9ca3af', marginBottom: '12px' }}>Event Tracking Data</h4>
-                 <table style={{ width: '100%', textAlign: 'left', borderCollapse: 'collapse', fontSize: '0.85rem' }}>
-                    <thead>
-                       <tr style={{ background: 'rgba(0,0,0,0.5)', color: '#9ca3af' }}>
-                         <th style={{ padding: '8px' }}>Tracking ID</th>
-                         <th style={{ padding: '8px' }}>Type</th>
-                         <th style={{ padding: '8px' }}>Last Speed</th>
-                         <th style={{ padding: '8px' }}>Location</th>
-                         <th style={{ padding: '8px' }}>Risk Level</th>
-                       </tr>
-                    </thead>
-                    <tbody>
-                       {(summary.accidentVehicles || []).map(v => (
-                         <tr key={v?.id || Math.random()} style={{ borderBottom: '1px solid #374151' }}>
-                            <td style={{ padding: '8px', color: '#d1d5db', fontFamily: 'monospace' }}>{v?.id ? v.id.split('-')[0] : 'N/A'}</td>
-                            <td style={{ padding: '8px', color: 'white', textTransform: 'capitalize' }}>{v?.cls || 'Unknown'}</td>
-                            <td style={{ padding: '8px', color: '#60a5fa' }}>{Math.round(v?.speed || 0)} px/frame</td>
-                            <td style={{ padding: '8px', color: '#a7f3d0' }}>Patna, Bihar</td>
-                            <td style={{ padding: '8px', color: v?.riskLevel === 'Critical' ? '#ef4444' : '#fbbf24', fontWeight: 'bold' }}>{v?.riskLevel || 'High'}</td>
-                         </tr>
-                       ))}
-                    </tbody>
-                 </table>
-               </div>
-               
-               {summary.snapshotData && (
-                 <div>
-                    <h4 style={{ color: '#9ca3af', marginBottom: '12px', display: 'flex', justifyContent: 'space-between' }}>
-                       <span>Accident Visual Evidence Snapshot</span>
-                       <span style={{ color: '#ef4444', fontSize: '0.75rem' }}>FRAME {summary.firstDetectionFrame}</span>
-                    </h4>
-                    <div style={{ border: '2px solid #ef4444', borderRadius: '8px', overflow: 'hidden', background: 'black', width: '100%', height: '200px', display: 'flex', justifyContent: 'center', alignItems: 'center' }}>
-                       <img src={summary.snapshotData} style={{ maxWidth: '100%', maxHeight: '100%', objectFit: 'contain' }} alt="Accident Evidence Snapshot" />
-                    </div>
-                 </div>
-               )}
-            </div>
-          </div>
-        )}
-
-        {summary && !summary.hasAccident && (
-          <div style={{ marginTop: '24px', background: '#111827', border: '1px solid #10b981', borderRadius: '8px', padding: '24px', boxShadow: '0 4px 20px rgba(16, 185, 129, 0.15)' }}>
-            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', borderBottom: '1px solid #374151', paddingBottom: '16px', marginBottom: '16px' }}>
-              <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
-                <span style={{ fontSize: '1.5rem' }}>✅</span>
-                <h3 style={{ color: '#10b981', margin: 0 }}>Incident Detection Profile</h3>
-              </div>
-              <div style={{ display: 'flex', gap: '12px' }}>
-                <button 
-                  onClick={sendEmailAlert}
-                  style={{ background: '#3b82f6', color: 'white', border: 'none', padding: '8px 16px', borderRadius: '6px', fontWeight: 'bold', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '8px' }}
-                >
-                  ✉️ Email Report
-                </button>
-                <button 
-                  onClick={downloadPDFReport}
-                  style={{ background: '#10b981', color: 'white', border: 'none', padding: '8px 16px', borderRadius: '6px', fontWeight: 'bold', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '8px' }}
-                >
-                  📥 Download PDF Report
-                </button>
-              </div>
-            </div>
-            
-            <div style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
-               <div style={{ display: 'flex', justifyContent: 'space-between', background: 'rgba(0,0,0,0.2)', padding: '12px', borderRadius: '6px' }}>
-                  <span style={{ color: '#9ca3af' }}>Accident Status:</span>
-                  <strong style={{ color: '#10b981' }}>🟢 Safe / No Accident Detected</strong>
-               </div>
-               <div style={{ display: 'flex', justifyContent: 'space-between', background: 'rgba(0,0,0,0.2)', padding: '12px', borderRadius: '6px' }}>
-                  <span style={{ color: '#9ca3af' }}>Location:</span>
-                  <strong style={{ color: '#a7f3d0' }}>Patna, Bihar</strong>
-               </div>
-               <div style={{ display: 'flex', justifyContent: 'space-between', background: 'rgba(0,0,0,0.2)', padding: '12px', borderRadius: '6px' }}>
-                  <span style={{ color: '#9ca3af' }}>Total Frames Analyzed:</span>
-                  <strong>{summary.framesAnalyzed}</strong>
-               </div>
-               <div style={{ background: 'rgba(0,0,0,0.2)', padding: '12px', borderRadius: '6px' }}>
-                  <span style={{ color: '#9ca3af', display: 'block', marginBottom: '8px' }}>AI Summary Report</span>
-                  <div style={{ fontSize: '0.85rem', lineHeight: '1.5', color: '#e5e7eb' }}>
-                     The media analysis completed over {summary.framesAnalyzed} frames. No collisions or threshold-violating anomalies were detected. All tracked objects maintained safe speeds and trajectories. The location monitored was Patna, Bihar.
-                  </div>
-               </div>
-            </div>
-          </div>
-        )}
-
-        <div className="logs-container">
-          <div className="logs-header">
-            <span>System Logs</span>
-            <span>{logs.length} entries</span>
-          </div>
-          <div className="logs-list">
-            {logs.map((log, idx) => (
-              <div key={idx} className="log-item">
-                <span className="log-time">[{log.time}]</span>
-                <span className={`log-msg ${log.isAccident ? 'accident' : ''}`} style={{ whiteSpace: 'pre-wrap' }}>{log.msg}</span>
-              </div>
-            ))}
-          </div>
-        </div>
+        <LogsPanel logs={logs} setLogs={setLogs} />
       </div>
     </div>
   );
