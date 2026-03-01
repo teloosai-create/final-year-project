@@ -1,0 +1,57 @@
+================================================================================
+                           CollisionAI - Project Blueprint
+================================================================================
+
+1. PROJECT OVERVIEW
+-------------------
+CollisionAI is an intelligent, real-time accident detection system designed to analyze media (video/images) and live camera streams. Utilizing state-of-the-art computer vision models (YOLOv8 Cloud Engine), the system monitors traffic, tracks vehicle movements, detects collisions, and automatically coordinates reporting by sending alerts and generating detailed summaries.
+
+2. CORE FEATURES
+-------------------
+- Media & Live Stream Analysis: Support for uploading pre-recorded video or image files, as well as seamlessly connecting to system camera feeds for live monitoring.
+- Real-Time Accident Detection: Frame-by-frame analysis with object bounding boxes, tracking overlap, and velocity drops to accurately pinpoint collisions.
+- Vehicle Tracking & Telemetry: Continuously monitors multiple vehicles, calculating speed and tracking sudden decelerations to evaluate crash risk.
+- Intelligent Alerting System (Telegram): Immediately triggers push notifications to configured Telegram chat IDs when an accident happens, containing:
+    - Event ID and Trigger Timestamp
+    - Geolocated Maps Link (based on current/default location)
+    - Traffic Density & Vehicles Involved
+    - Collision Mode (e.g., Rear-end, Head-on) & Impact Force
+    - Severity Index and Estimated Damage Value
+    - Attached frame snapshot of the accident
+- Comprehensive Reporting: Automatic generation of detection summary logs and the ability to download a well-structured PDF report containing a breakdown of the event.
+- Shareable Link Generation: Creates a quick shareable link referencing the auto-generated event ID.
+- Dynamic Dashboard UI: A modern, visually engaging dashboard featuring:
+    - Sidebar with configuration settings (speed threshold, frame tolerance).
+    - Detection Summary Panel and Real-Time Logs Panel.
+    - Custom stylized CollisionAI branding.
+
+3. SYSTEM ARCHITECTURE & MODULES
+-------------------
+- Frontend Engine (React + Vite):
+    - App.jsx: Main controller managing state, media refs, canvas overlays, tracking logic, cloud API integration, and Telegram alert dispatching.
+    - Sidebar.jsx: Controls media input, playback toggles, engine configs, and real-time detection insights (Severity, FPS, Vehicles Involved).
+    - SummaryPanel.jsx: Renders post-analysis summaries, PDF download options, and alert triggers.
+    - LogsPanel.jsx: Provides a live terminal-like display of internal system operations and tracking history.
+- Object Detection API Pipeline:
+    - Extracts frames via HTML5 Canvas.
+    - Uploads frames to the YOLOv8-powered Cloud endpoint via Axios.
+    - Parses JSON bounding box responses to map coordinates to the frontend tracking state.
+
+4. TRACKING & COLLISION LOGIC
+-------------------
+- Bounding Box overlap calculation thresholding (area overlap > 5%).
+- Velocity tracking over a rolling window. If speed drops heavily and objects intersect, a collision is flagged.
+- Calculates Impact Force and outputs Collision Types (Side-impact, Head-on, Rear-end, Multi-vehicle pileup).
+
+5. FUTURE ENHANCEMENTS (ROADMAP)
+-------------------
+- Multi-Camera Stitching: Support for analyzing multiple camera feeds simultaneously from a single dashboard.
+- Advanced Number Plate Recognition (ANPR): Integrate OCR (like Tesseract or cloud OCR) to extract actual license plates of cars involved in real-time, rather than generating placeholders.
+- Real-Time Cloud Database Integration: Store event logs, videos, and snapshots dynamically in Firebase, AWS S3, or MongoDB rather than relying on brief frontend memory.
+- Advanced Weather Adaptation: Use actual weather APIs based on the device geolocation rather than static placeholders to dynamically adjust detection thresholds (e.g., lower speed thresholds on rainy days).
+- Emergency Services API Integration: Direct dispatch hooks to local EMS/Police endpoints based on the detected severity index.
+- Mobile App Deployment: Package the web application into a Progressive Web App (PWA) or React Native app for deployment on mobile devices.
+
+================================================================================
+End of Blueprint
+================================================================================
