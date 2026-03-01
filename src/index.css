@@ -54,6 +54,7 @@ body {
   font-weight: 700;
   background: linear-gradient(135deg, #a78bfa, #6366f1);
   -webkit-background-clip: text;
+  background-clip: text;
   -webkit-text-fill-color: transparent;
 }
 
@@ -145,6 +146,7 @@ body {
   justify-content: space-between;
   align-items: center;
   margin-bottom: 24px;
+  flex-shrink: 0;
 }
 
 .header h2 {
@@ -176,6 +178,7 @@ body {
   width: 100%;
   max-width: 900px;
   aspect-ratio: 16/9;
+  flex-shrink: 0;
   background: black;
   border-radius: 16px;
   overflow: hidden;
@@ -220,7 +223,8 @@ body {
 }
 
 .logs-container {
-  margin-top: 32px;
+  margin-top: auto;
+  flex-shrink: 0;
   background: #111827;
   border: 1px solid #374151;
   border-radius: 8px;

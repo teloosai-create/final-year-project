@@ -90,22 +90,6 @@ export default function Sidebar({
                 >
                     {isActive ? 'Pause Video & Engine' : 'Play Video & Engine'}
                 </button>
-
-                {summary && (
-                    <button
-                        className="btn"
-                        style={{
-                            width: '100%',
-                            marginTop: '12px',
-                            background: 'transparent',
-                            border: `1px solid ${summary.hasAccident ? 'var(--danger-color)' : '#10b981'}`,
-                            color: summary.hasAccident ? 'var(--danger-color)' : '#10b981'
-                        }}
-                        onClick={downloadPDFReport}
-                    >
-                        📄 Download Report (PDF)
-                    </button>
-                )}
             </div>
         </div>
     );

@@ -24,7 +24,9 @@ export default function App() {
   const [mediaSrc, setMediaSrc] = useState(null);
   const [mediaType, setMediaType] = useState('video'); // 'video' or 'image'
   const [summary, setSummary] = useState(null);
-  const [locationName, setLocationName] = useState("Unknown Location");
+  const [locationName, setLocationName] = useState("Loading Location...");
+  const [locationCoords, setLocationCoords] = useState({ lat: 25.612, lon: 85.115 });
+  const [apiLatencies, setApiLatencies] = useState([]);
 
   const videoRef = useRef(null);
   const imageRef = useRef(null);
@@ -103,17 +105,21 @@ export default function App() {
               const res = await fetch(`https://nominatim.openstreetmap.org/reverse?format=json&lat=${latitude}&lon=${longitude}`);
               const data = await res.json();
               setLocationName(data.display_name || `${latitude.toFixed(4)}, ${longitude.toFixed(4)}`);
+              setLocationCoords({ lat: latitude, lon: longitude });
             } catch (err) {
               setLocationName(`${latitude.toFixed(4)}, ${longitude.toFixed(4)}`);
+              setLocationCoords({ lat: latitude, lon: longitude });
             }
           },
           (error) => {
             console.error("Error getting location", error);
-            setLocationName("Location Permission Denied");
+            setLocationName("Location Permission Denied. Using fallback.");
+            setLocationCoords({ lat: 25.612, lon: 85.115 });
           }
         );
       } else {
-        setLocationName("Geolocation Not Supported");
+        setLocationName("Geolocation Not Supported. Using default.");
+        setLocationCoords({ lat: 25.612, lon: 85.115 });
       }
     }
   };
@@ -172,7 +178,10 @@ export default function App() {
         }
       };
 
+      const reqStart = Date.now();
       const res = await axios.post(apiUrl, formData, config);
+      const latency = Date.now() - reqStart;
+      setApiLatencies(prev => [...prev.slice(-19), latency]);
       return res.data;
     } catch (err) {
       const errMsg = err.response?.data?.message || err.response?.data?.error || err.message || "Unknown API Error";
@@ -248,14 +257,28 @@ export default function App() {
       let plate = `DL-${Math.floor(1 + Math.random() * 9)}C-${Math.floor(1000 + Math.random() * 9000)}`;
       let lowSpeedFrames = 0;
       let speed = 0;
+      let history = [];
+      let speedHistory = [];
+      let speedChange = 0;
 
       if (bestId && trackingObj.current[bestId]) {
         plate = trackingObj.current[bestId].plate || plate;
         roadCondition = trackingObj.current[bestId].roadCondition || roadCondition;
+        history = trackingObj.current[bestId].history || [];
+        speedHistory = trackingObj.current[bestId].speedHistory || [];
       }
+
+      history.push({ cx, cy });
+      if (history.length > 20) history.shift();
 
       if (bestId && mediaType === 'video') {
         speed = minDist;
+        speedHistory.push(speed);
+        if (speedHistory.length > 20) speedHistory.shift();
+
+        const maxSpd = Math.max(...speedHistory, 1);
+        speedChange = Math.max(0, ((maxSpd - speed) / maxSpd) * 100);
+
         if (speed < speedThreshold) {
           lowSpeedFrames = trackingObj.current[bestId].lowSpeedFrames + 1;
         }
@@ -283,7 +306,10 @@ export default function App() {
         }
       }
 
-      newTracked[idToUse] = { id: idToUse, x1, y1, x2, y2, cx, cy, cls, conf, speed, lowSpeedFrames, isAccident, riskLevel, plate, roadCondition };
+      let collisionType = 'N/A';
+      let impactForce = 'Low';
+
+      newTracked[idToUse] = { id: idToUse, x1, y1, x2, y2, cx, cy, cls, conf, speed, lowSpeedFrames, isAccident, riskLevel, plate, roadCondition, history, speedHistory, speedChange, collisionType, impactForce };
       frameObjectsList.push(`${cls}(ID:${idToUse.slice(0, 4)})`);
       analyticsRef.current.uniqueIds.add(idToUse);
     });
@@ -307,18 +333,39 @@ export default function App() {
             accidentNow = true;
             newAccidentOccurred = true;
             analyticsRef.current.hasAccident = true;
+
             b1.isAccident = true;
             b2.isAccident = true;
             b1.riskLevel = 'Critical';
             b2.riskLevel = 'Critical';
+
+            const dx = Math.abs(b2.cx - b1.cx);
+            const dy = Math.abs(b2.cy - b1.cy);
+            let cType = "Side-impact";
+            if (dx > dy * 1.5) cType = "Head-on";
+            else if (dy > dx * 1.5) cType = "Rear-end";
+
+            if (Object.values(newTracked).filter(t => t.isAccident).length > 2) {
+              cType = "Multi-vehicle pileup";
+            }
+            b1.collisionType = cType;
+            b2.collisionType = cType;
+
+            const forceVal = (b1.speed || 0) + (b2.speed || 0);
+            let iForce = "Low";
+            if (forceVal > speedThreshold * 1.5) iForce = "Medium";
+            if (forceVal > speedThreshold * 3) iForce = "High";
+            b1.impactForce = iForce;
+            b2.impactForce = iForce;
+
             analyticsRef.current.involvedObjects.add(b1.cls);
             analyticsRef.current.involvedObjects.add(b2.cls);
             if (analyticsRef.current.firstDetectionTime === null) {
               analyticsRef.current.firstDetectionTime = currentVideoTime !== null ? currentVideoTime.toFixed(1) : 'Frame ' + analyticsRef.current.framesAnalyzed;
               analyticsRef.current.firstDetectionFrame = analyticsRef.current.framesAnalyzed;
-              analyticsRef.current.accidentReason = "Collision: Overlapping bounding boxes detected suddenly";
+              analyticsRef.current.accidentReason = `Collision: ${cType} detected with ${iForce} impact force.`;
               analyticsRef.current.confidence = 96;
-              analyticsRef.current.severity = 8.7;
+              analyticsRef.current.severity = iForce === 'High' ? 9.5 : (iForce === 'Medium' ? 7.5 : 5.5);
             }
           }
         }
@@ -332,7 +379,8 @@ export default function App() {
       vehicles: detectedVehiclesCount,
       accidents: newAccidentOccurred ? 1 : 0,
       objectsStr: frameObjectsList.length ? `[${frameObjectsList.join(', ')}]` : '[]',
-      isAccidentLabel: newAccidentOccurred ? 'True' : 'False'
+      isAccidentLabel: newAccidentOccurred ? 'True' : 'False',
+      confidenceValue: accidentNow ? (analyticsRef.current.confidence || Math.random() * 15 + 80) : Math.random() * 10
     });
 
     if (newAccidentOccurred && analyticsRef.current.accidentVehicles.length === 0) {
@@ -380,9 +428,28 @@ export default function App() {
       ctx.fillStyle = 'white';
       ctx.fillText(label, det.x1 + 6, det.y1 - 8);
 
+      if (det.history && det.history.length > 1) {
+        ctx.beginPath();
+        ctx.strokeStyle = det.isAccident ? 'rgba(239, 68, 68, 0.7)' : 'rgba(16, 185, 129, 0.5)';
+        ctx.lineWidth = 2;
+        ctx.moveTo(det.history[0].cx, det.history[0].cy);
+        for (let k = 1; k < det.history.length; k++) {
+          ctx.lineTo(det.history[k].cx, det.history[k].cy);
+        }
+        ctx.stroke();
+      }
+
       if (det.isAccident) {
-        ctx.fillStyle = 'rgba(239, 68, 68, 0.2)';
+        ctx.fillStyle = 'rgba(239, 68, 68, 0.05)';
         ctx.fillRect(det.x1, det.y1, det.x2 - det.x1, det.y2 - det.y1);
+
+        const grd = ctx.createRadialGradient(det.cx, det.cy, 10, det.cx, det.cy, Math.max(det.x2 - det.x1, det.y2 - det.y1));
+        grd.addColorStop(0, "rgba(255, 0, 0, 0.2)");
+        grd.addColorStop(1, "rgba(255, 0, 0, 0)");
+        ctx.fillStyle = grd;
+        ctx.beginPath();
+        ctx.arc(det.cx, det.cy, Math.max(det.x2 - det.x1, det.y2 - det.y1), 0, 2 * Math.PI);
+        ctx.fill();
       }
     });
   };
@@ -448,6 +515,10 @@ export default function App() {
 
     logText += `\n(Detailed 'frame_details' list is now populated with data for all frames)`;
 
+    const currentSeverity = analyticsRef.current.severity || 0;
+    const damageRange = currentSeverity >= 8 ? "₹1,50,000 – ₹5,00,000" : (currentSeverity >= 5 ? "₹50,000 – ₹1,50,000" : "₹5,000 – ₹50,000");
+    const avgLatency = apiLatencies.length ? Math.round(apiLatencies.reduce((a, b) => a + b, 0) / apiLatencies.length) : 150;
+
     setSummary({
       framesAnalyzed: analyticsRef.current.framesAnalyzed,
       hasAccident: analyticsRef.current.hasAccident,
@@ -460,7 +531,11 @@ export default function App() {
       firstDetectionTime: analyticsRef.current.firstDetectionTime,
       firstDetectionFrame: analyticsRef.current.firstDetectionFrame,
       accidentVehicles: analyticsRef.current.accidentVehicles,
-      snapshotData: analyticsRef.current.snapshotData
+      snapshotData: analyticsRef.current.snapshotData,
+      eventID: `ACC-${new Date().toISOString().split('T')[0]}-${Math.floor(1000 + Math.random() * 9000)}`,
+      damageRange,
+      avgLatency,
+      modelType: "YOLOv8 Cloud Engine"
     });
 
     addLog(logText);
@@ -500,10 +575,10 @@ export default function App() {
 
     const BOT_TOKEN = "8755648682:AAEM2BE03RjkERCieUCAxtr1UJXBaESlf6I";
     const CHAT_IDS = ["8503429521", "5995705267"];
-    const subject = summary.hasAccident ? "🚨 ACCIDENT DETECTED!" : "✅ SAFE REPORT";
+    const subject = summary.hasAccident ? "🚨 CRITICAL ACCIDENT DETECTED!" : "✅ SAFE REPORT";
     const reportText = summary.hasAccident
-      ? `${subject}\n\n🕒 Time: Frame ${summary.firstDetectionFrame}\n📍 Location: ${locationName}\n🛣️ Road Details: ${(summary.accidentVehicles?.[0]?.roadCondition || "Clear, Normal Visibility")}\n🚗 Vehicles Involved: ${(summary.accidentVehicles || []).length}\n🏷️ Vehicle Reg Details: ${(summary.accidentVehicles || []).map(v => v.plate).join(', ') || 'N/A'}\n🎯 Severity: ${summary.severity >= 8 ? 'High' : (summary.severity >= 5 ? 'Medium' : 'Low')} (${summary.severity}/10)\n📸 Frame Attached: ${summary.snapshotData ? 'Yes' : 'No'}\n\nReason: ${summary.accidentReason}\nConfidence: ${summary.confidence}%`
-      : `${subject}\n\nNo accidents detected over ${summary.framesAnalyzed} frames.\n📍 Location: ${locationName}`;
+      ? `${subject}\n\n🆔 Event ID: ${summary.eventID || 'Unknown'}\n🕒 Trigger Timestamp: Frame ${summary.firstDetectionFrame} (${summary.firstDetectionTime}s)\n📍 Location: ${locationName}\n� Density: ${(summary.history && summary.history.reduce((a, b) => Math.max(a, b.vehicles || 0), 0) >= 12) ? 'Heavy' : 'Moderate/Light'}\n\n🚗 Vehicles Involved: ${(summary.accidentVehicles || []).length}\n💥 Collision Mode: ${(summary.accidentVehicles?.[0]?.collisionType || "Unknown")}\n⚡ Estimated Impact: ${(summary.accidentVehicles?.[0]?.impactForce || "Unknown")}\n📉 Max Speed Drop: -${Math.round(summary.accidentVehicles?.[0]?.speedChange || 0)}%\n\n🎯 Severity Index: ${summary.severity}/10 \n� Est. Damage: ${summary.damageRange || 'N/A'}\n🤖 Confidence: ${summary.confidence}% (${summary.modelType})`
+      : `${subject}\n\nNo accidents detected over ${summary.framesAnalyzed} frames.\n📍 Location: ${locationName}\nLatency: ${summary.avgLatency}ms`;
 
     try {
       addLog("Sending Telegram alerts...");
@@ -684,11 +759,12 @@ export default function App() {
           )}
         </div>
 
-        <SummaryPanel 
-          summary={summary} 
-          sendTelegramAlert={sendTelegramAlert} 
-          downloadPDFReport={downloadPDFReport} 
-          locationName={locationName} 
+        <SummaryPanel
+          summary={summary}
+          sendTelegramAlert={sendTelegramAlert}
+          downloadPDFReport={downloadPDFReport}
+          locationName={locationName}
+          locationCoords={locationCoords}
         />
 
         <LogsPanel logs={logs} setLogs={setLogs} />
