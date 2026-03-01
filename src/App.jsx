@@ -23,6 +23,7 @@ export default function App() {
 
   const [mediaSrc, setMediaSrc] = useState(null);
   const [mediaType, setMediaType] = useState('video'); // 'video' or 'image'
+  const [isLiveStream, setIsLiveStream] = useState(false);
   const [summary, setSummary] = useState(null);
   const [locationName, setLocationName] = useState("Loading Location...");
   const [locationCoords, setLocationCoords] = useState({ lat: 25.612, lon: 85.115 });
@@ -71,6 +72,7 @@ export default function App() {
     if (file) {
       setMediaSrc(URL.createObjectURL(file));
       setMediaType(file.type.startsWith('image') ? 'image' : 'video');
+      setIsLiveStream(false);
       setIsActive(false);
       setHasAccident(false);
       setSummary(null);
@@ -123,6 +125,49 @@ export default function App() {
       }
     }
   };
+
+  const handleCameraFeed = async () => {
+    try {
+      const stream = await navigator.mediaDevices.getUserMedia({ video: true });
+      setMediaSrc(stream);
+      setMediaType('video');
+      setIsLiveStream(true);
+      setIsActive(false);
+      setHasAccident(false);
+      setSummary(null);
+      analyticsRef.current = {
+        framesAnalyzed: 0,
+        hasAccident: false,
+        involvedObjects: new Set(),
+        firstDetectionTime: null,
+        firstDetectionFrame: null,
+        accidentReason: '',
+        confidence: 0,
+        severity: 0,
+        accidentVehicles: [],
+        snapshotData: null,
+        history: [],
+        uniqueIds: new Set()
+      };
+      trackingObj.current = {};
+
+      const canvas = canvasRef.current;
+      if (canvas) {
+        const ctx = canvas.getContext('2d');
+        ctx.clearRect(0, 0, canvas.width, canvas.height);
+      }
+      addLog("System Camera Feed initiated.");
+    } catch (err) {
+      alert("Could not access camera.");
+      console.error(err);
+    }
+  };
+
+  useEffect(() => {
+    if (videoRef.current && isLiveStream && mediaSrc) {
+      videoRef.current.srcObject = mediaSrc;
+    }
+  }, [mediaSrc, isLiveStream]);
 
   const getFrameData = async () => {
     const hCanvas = hiddenCanvasRef.current;
@@ -576,9 +621,10 @@ export default function App() {
     const BOT_TOKEN = "8755648682:AAEM2BE03RjkERCieUCAxtr1UJXBaESlf6I";
     const CHAT_IDS = ["8503429521", "5995705267"];
     const subject = summary.hasAccident ? "🚨 CRITICAL ACCIDENT DETECTED!" : "✅ SAFE REPORT";
+    const mapsLink = `https://www.google.com/maps?q=${locationCoords.lat},${locationCoords.lon}`;
     const reportText = summary.hasAccident
-      ? `${subject}\n\n🆔 Event ID: ${summary.eventID || 'Unknown'}\n🕒 Trigger Timestamp: Frame ${summary.firstDetectionFrame} (${summary.firstDetectionTime}s)\n📍 Location: ${locationName}\n� Density: ${(summary.history && summary.history.reduce((a, b) => Math.max(a, b.vehicles || 0), 0) >= 12) ? 'Heavy' : 'Moderate/Light'}\n\n🚗 Vehicles Involved: ${(summary.accidentVehicles || []).length}\n💥 Collision Mode: ${(summary.accidentVehicles?.[0]?.collisionType || "Unknown")}\n⚡ Estimated Impact: ${(summary.accidentVehicles?.[0]?.impactForce || "Unknown")}\n📉 Max Speed Drop: -${Math.round(summary.accidentVehicles?.[0]?.speedChange || 0)}%\n\n🎯 Severity Index: ${summary.severity}/10 \n� Est. Damage: ${summary.damageRange || 'N/A'}\n🤖 Confidence: ${summary.confidence}% (${summary.modelType})`
-      : `${subject}\n\nNo accidents detected over ${summary.framesAnalyzed} frames.\n📍 Location: ${locationName}\nLatency: ${summary.avgLatency}ms`;
+      ? `${subject}\n\n🆔 Event ID: ${summary.eventID || 'Unknown'}\n🕒 Trigger Timestamp: Frame ${summary.firstDetectionFrame} (${summary.firstDetectionTime}s)\n📍 Location: ${locationName}\n🗺️ Maps: ${mapsLink}\n� Density: ${(summary.history && summary.history.reduce((a, b) => Math.max(a, b.vehicles || 0), 0) >= 12) ? 'Heavy' : 'Moderate/Light'}\n\n🚗 Vehicles Involved: ${(summary.accidentVehicles || []).length}\n💥 Collision Mode: ${(summary.accidentVehicles?.[0]?.collisionType || "Unknown")}\n⚡ Estimated Impact: ${(summary.accidentVehicles?.[0]?.impactForce || "Unknown")}\n📉 Max Speed Drop: -${Math.round(summary.accidentVehicles?.[0]?.speedChange || 0)}%\n\n🎯 Severity Index: ${summary.severity}/10 \n� Est. Damage: ${summary.damageRange || 'N/A'}\n🤖 Confidence: ${summary.confidence}% (${summary.modelType})`
+      : `${subject}\n\nNo accidents detected over ${summary.framesAnalyzed} frames.\n📍 Location: ${locationName}\n🗺️ Maps: ${mapsLink}\nLatency: ${summary.avgLatency}ms`;
 
     try {
       addLog("Sending Telegram alerts...");
@@ -632,7 +678,7 @@ export default function App() {
 
   const handleStartStop = () => {
     if (!mediaSrc) {
-      alert("Please upload media first");
+      alert("Please upload media or start camera first");
       return;
     }
     const newActiveState = !isActive;
@@ -653,14 +699,44 @@ export default function App() {
         history: [],
         uniqueIds: new Set()
       };
-      if (mediaType === 'video') {
+      if (mediaType === 'video' && !isLiveStream) {
         videoRef.current?.play();
       }
     } else {
-      if (mediaType === 'video') {
+      if (mediaType === 'video' && !isLiveStream) {
         videoRef.current?.pause();
       }
       finishAnalysis();
+    }
+  };
+
+  const handleRestart = () => {
+    if (mediaType === 'video' && videoRef.current && !isLiveStream) {
+      videoRef.current.currentTime = 0;
+      videoRef.current.play();
+      setIsActive(true);
+      setHasAccident(false);
+      trackingObj.current = {};
+      setSummary(null);
+      analyticsRef.current = {
+        framesAnalyzed: 0,
+        hasAccident: false,
+        involvedObjects: new Set(),
+        firstDetectionTime: null,
+        firstDetectionFrame: null,
+        accidentReason: '',
+        confidence: 0,
+        severity: 0,
+        accidentVehicles: [],
+        snapshotData: null,
+        history: [],
+        uniqueIds: new Set()
+      };
+      const canvas = canvasRef.current;
+      if (canvas) {
+        const ctx = canvas.getContext('2d');
+        ctx.clearRect(0, 0, canvas.width, canvas.height);
+      }
     }
   };
 
@@ -697,8 +773,10 @@ export default function App() {
         frameThreshold={frameThreshold}
         setFrameThreshold={setFrameThreshold}
         handleFileUpload={handleFileUpload}
+        handleCameraFeed={handleCameraFeed}
         isActive={isActive}
         handleStartStop={handleStartStop}
+        handleRestart={handleRestart}
         mediaSrc={mediaSrc}
         summary={summary}
         downloadPDFReport={downloadPDFReport}
@@ -728,9 +806,10 @@ export default function App() {
               {mediaType === 'video' ? (
                 <video
                   ref={videoRef}
-                  src={mediaSrc}
+                  src={!isLiveStream ? mediaSrc : undefined}
                   className="video-element"
-                  controls={true}
+                  controls={!isLiveStream}
+                  autoPlay={isLiveStream}
                   onEnded={handleVideoEnded}
                   muted
                 />
