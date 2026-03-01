@@ -619,7 +619,7 @@ export default function App() {
     if (!summary) return;
 
     const BOT_TOKEN = "8755648682:AAEM2BE03RjkERCieUCAxtr1UJXBaESlf6I";
-    const CHAT_IDS = ["8503429521", "5995705267"];
+    const CHAT_IDS = ["8503429521", "5995705267", "5194855700"];
     const subject = summary.hasAccident ? "🚨 CRITICAL ACCIDENT DETECTED!" : "✅ SAFE REPORT";
     const mapsLink = `https://www.google.com/maps?q=${locationCoords.lat},${locationCoords.lon}`;
     const reportText = summary.hasAccident
