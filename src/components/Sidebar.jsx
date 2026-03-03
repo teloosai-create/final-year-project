@@ -125,7 +125,7 @@ export default function Sidebar({
             <div style={{ background: 'rgba(0,0,0,0.2)', padding: '16px', borderRadius: '8px' }}>
                 {renderSectionHeader('4️⃣', 'Environment')}
                 {renderMetricRow('Weather', 'Clear (Auto-detect)', 'white')}
-                {renderMetricRow('Lighting', 'Daytime', '#fde047')}
+                {renderMetricRow('Lighting', summary?.lighting || 'Daytime', '#fde047')}
                 {renderMetricRow('Traffic Density', summary ? (vehiclesObj < 5 ? 'Light' : (vehiclesObj < 12 ? 'Moderate' : 'Heavy')) : '...', '#a7f3d0')}
             </div>
 

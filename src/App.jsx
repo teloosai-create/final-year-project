@@ -49,7 +49,8 @@ export default function App() {
     accidentVehicles: [],
     snapshotData: null,
     history: [],
-    uniqueIds: new Set()
+    uniqueIds: new Set(),
+    lighting: "Assessing..."
   });
 
   useEffect(() => {
@@ -59,6 +60,21 @@ export default function App() {
   useEffect(() => {
     activeClassesRef.current = activeClasses;
   }, [activeClasses]);
+
+  // Warm up the Cloud API container as soon as the app loads to prevent initial cold-start delays
+  useEffect(() => {
+    if (apiUrl) {
+      const canvas = document.createElement('canvas');
+      canvas.width = 10; canvas.height = 10;
+      canvas.toBlob((blob) => {
+        const fd = new FormData();
+        fd.append('file', blob, 'ping.jpg');
+        axios.post(apiUrl, fd, {
+          headers: { "Authorization": `Bearer ${apiKey}` }
+        }).catch(() => { });
+      }, 'image/jpeg', 0.1);
+    }
+  }, []);
 
   const trackingObj = useRef({});
 
@@ -73,7 +89,7 @@ export default function App() {
       setMediaSrc(URL.createObjectURL(file));
       setMediaType(file.type.startsWith('image') ? 'image' : 'video');
       setIsLiveStream(false);
-      setIsActive(false);
+      setIsActive(false); // Only start when user hits Play button
       setHasAccident(false);
       setSummary(null);
       analyticsRef.current = {
@@ -88,7 +104,8 @@ export default function App() {
         accidentVehicles: [],
         snapshotData: null,
         history: [],
-        uniqueIds: new Set()
+        uniqueIds: new Set(),
+        lighting: "Daytime"
       };
       trackingObj.current = {};
 
@@ -147,7 +164,8 @@ export default function App() {
         accidentVehicles: [],
         snapshotData: null,
         history: [],
-        uniqueIds: new Set()
+        uniqueIds: new Set(),
+        lighting: "Daytime"
       };
       trackingObj.current = {};
 
@@ -199,12 +217,13 @@ export default function App() {
       return new Promise((resolve) => {
         hCanvas.toBlob((blob) => {
           resolve(blob);
-        }, 'image/jpeg', 0.8);
+        }, 'image/jpeg', 0.5); // Reduced quality for faster network send
       });
     } catch (err) {
       addLog(`Canvas Extraction Error: ${err.message}`, true);
       return null;
     }
+    
   };
 
   const sendToCloudAPI = async (frameBlob) => {
@@ -510,6 +529,40 @@ export default function App() {
       return;
     }
 
+    // Determine lighting based on image pixel canvas
+    try {
+      const hCanvas = hiddenCanvasRef.current;
+      if (hCanvas) {
+        const ctx = hCanvas.getContext('2d');
+        const imageData = ctx.getImageData(0, 0, hCanvas.width, hCanvas.height);
+        const data = imageData.data;
+        let r, g, b, avg;
+        let colorSum = 0;
+        // Sample down pixels to avoid freezing UI
+        const step = 4 * 100;
+        let count = 0;
+        for (let x = 0; x < data.length; x += step) {
+          r = data[x];
+          g = data[x + 1];
+          b = data[x + 2];
+          avg = Math.floor((r + g + b) / 3);
+          colorSum += avg;
+          count++;
+        }
+        const brightness = Math.floor(colorSum / count);
+        // Brightness threshold: below 80 is night
+        if (brightness < 80) {
+          analyticsRef.current.lighting = "Nighttime";
+        } else if (brightness < 120) {
+          analyticsRef.current.lighting = "Low Light (Dusk/Dawn)";
+        } else {
+          analyticsRef.current.lighting = "Daytime";
+        }
+      }
+    } catch (e) {
+      // ignore
+    }
+
     const detections = await sendToCloudAPI(frameBlob);
 
     if (detections && isActiveRef.current) {
@@ -538,7 +591,7 @@ export default function App() {
 
     if (isActiveRef.current) {
       if (mediaType === 'video') {
-        loopRef.current = setTimeout(processFrame, 200);
+        loopRef.current = setTimeout(processFrame, 50); // Reduced loop delay from 200ms
       } else {
         setIsActive(false);
         finishAnalysis();
@@ -580,7 +633,8 @@ export default function App() {
       eventID: `ACC-${new Date().toISOString().split('T')[0]}-${Math.floor(1000 + Math.random() * 9000)}`,
       damageRange,
       avgLatency,
-      modelType: "YOLOv8 Cloud Engine"
+      modelType: "YOLOv8 Cloud Engine",
+      lighting: analyticsRef.current.lighting || "Daytime"
     });
 
     addLog(logText);
@@ -697,7 +751,8 @@ export default function App() {
         accidentVehicles: [],
         snapshotData: null,
         history: [],
-        uniqueIds: new Set()
+        uniqueIds: new Set(),
+        lighting: "Assessing..."
       };
       if (mediaType === 'video' && !isLiveStream) {
         videoRef.current?.play();
@@ -730,7 +785,8 @@ export default function App() {
         accidentVehicles: [],
         snapshotData: null,
         history: [],
-        uniqueIds: new Set()
+        uniqueIds: new Set(),
+        lighting: "Assessing..."
       };
       const canvas = canvasRef.current;
       if (canvas) {

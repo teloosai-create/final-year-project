@@ -137,8 +137,8 @@ export default function SummaryPanel({ summary, sendTelegramAlert, downloadPDFRe
                                     </tr>
                                 </thead>
                                 <tbody>
-                                    {(summary.accidentVehicles || []).map(v => (
-                                        <tr key={v?.id || Math.random()} style={{ borderBottom: '1px solid #374151' }}>
+                                    {(summary.accidentVehicles || []).map((v, idx) => (
+                                        <tr key={v?.id || idx} style={{ borderBottom: '1px solid #374151' }}>
                                             <td style={{ padding: '8px', color: '#d1d5db', fontFamily: 'monospace' }}>{v?.id ? v.id.slice(0, 4) : 'N/A'}</td>
                                             <td style={{ padding: '8px', color: 'white', textTransform: 'capitalize' }}>{v?.cls || 'Unknown'}</td>
                                             <td style={{ padding: '8px', color: '#fcd34d', fontWeight: 'bold' }}>{v?.collisionType || 'N/A'}</td>
