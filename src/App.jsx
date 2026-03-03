@@ -6,6 +6,7 @@ import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, Legend, Responsi
 import Sidebar from './components/Sidebar';
 import SummaryPanel from './components/SummaryPanel';
 import LogsPanel from './components/LogsPanel';
+import { drivers, vehicles, emergencyContacts, videoData } from './data';
 import './index.css';
 
 export default function App() {
@@ -28,6 +29,12 @@ export default function App() {
   const [locationName, setLocationName] = useState("Loading Location...");
   const [locationCoords, setLocationCoords] = useState({ lat: 25.612, lon: 85.115 });
   const [apiLatencies, setApiLatencies] = useState([]);
+  const [now, setNow] = useState(new Date());
+
+  useEffect(() => {
+    const timer = setInterval(() => setNow(new Date()), 1000);
+    return () => clearInterval(timer);
+  }, []);
 
   const videoRef = useRef(null);
   const imageRef = useRef(null);
@@ -223,7 +230,7 @@ export default function App() {
       addLog(`Canvas Extraction Error: ${err.message}`, true);
       return null;
     }
-    
+
   };
 
   const sendToCloudAPI = async (frameBlob) => {
@@ -617,6 +624,17 @@ export default function App() {
     const damageRange = currentSeverity >= 8 ? "₹1,50,000 – ₹5,00,000" : (currentSeverity >= 5 ? "₹50,000 – ₹1,50,000" : "₹5,000 – ₹50,000");
     const avgLatency = apiLatencies.length ? Math.round(apiLatencies.reduce((a, b) => a + b, 0) / apiLatencies.length) : 150;
 
+    // Pick randomized mock data if accident occurred
+    let driver = null;
+    let vehicle = null;
+    let contact = null;
+    if (analyticsRef.current.hasAccident) {
+      const idx = Math.floor(Math.random() * drivers.length);
+      driver = drivers[idx];
+      vehicle = vehicles[idx];
+      contact = emergencyContacts.find(c => c.contactId === driver.emergencyContactId) || emergencyContacts[0];
+    }
+
     setSummary({
       framesAnalyzed: analyticsRef.current.framesAnalyzed,
       hasAccident: analyticsRef.current.hasAccident,
@@ -634,7 +652,11 @@ export default function App() {
       damageRange,
       avgLatency,
       modelType: "YOLOv8 Cloud Engine",
-      lighting: analyticsRef.current.lighting || "Daytime"
+      lighting: analyticsRef.current.lighting || "Daytime",
+      timestamp: new Date().toLocaleString(),
+      driverInfo: driver,
+      vehicleInfo: vehicle,
+      emergencyContact: contact
     });
 
     addLog(logText);
@@ -675,10 +697,16 @@ export default function App() {
     const BOT_TOKEN = "8755648682:AAEM2BE03RjkERCieUCAxtr1UJXBaESlf6I";
     const CHAT_IDS = ["8503429521", "5995705267", "5194855700"];
     const subject = summary.hasAccident ? "🚨 CRITICAL ACCIDENT DETECTED!" : "✅ SAFE REPORT";
+    const dateTimeStr = summary.timestamp || new Date().toLocaleString();
     const mapsLink = `https://www.google.com/maps?q=${locationCoords.lat},${locationCoords.lon}`;
+
+    const driverDetail = summary.driverInfo ? `👤 Driver: ${summary.driverInfo.name} (${summary.driverInfo.bloodGroup})\n📱 Phone: ${summary.driverInfo.phone}\n` : "";
+    const vehicleDetail = summary.vehicleInfo ? `🚗 Vehicle: ${summary.vehicleInfo.brand} ${summary.vehicleInfo.model} [${summary.vehicleInfo.registrationNumber}]\n` : "";
+    const emergencyDetail = summary.emergencyContact ? `🆘 Emergency: ${summary.emergencyContact.name} (${summary.emergencyContact.relation})\n📞 Contact: ${summary.emergencyContact.phone}\n` : "";
+
     const reportText = summary.hasAccident
-      ? `${subject}\n\n🆔 Event ID: ${summary.eventID || 'Unknown'}\n🕒 Trigger Timestamp: Frame ${summary.firstDetectionFrame} (${summary.firstDetectionTime}s)\n📍 Location: ${locationName}\n🗺️ Maps: ${mapsLink}\n� Density: ${(summary.history && summary.history.reduce((a, b) => Math.max(a, b.vehicles || 0), 0) >= 12) ? 'Heavy' : 'Moderate/Light'}\n\n🚗 Vehicles Involved: ${(summary.accidentVehicles || []).length}\n💥 Collision Mode: ${(summary.accidentVehicles?.[0]?.collisionType || "Unknown")}\n⚡ Estimated Impact: ${(summary.accidentVehicles?.[0]?.impactForce || "Unknown")}\n📉 Max Speed Drop: -${Math.round(summary.accidentVehicles?.[0]?.speedChange || 0)}%\n\n🎯 Severity Index: ${summary.severity}/10 \n� Est. Damage: ${summary.damageRange || 'N/A'}\n🤖 Confidence: ${summary.confidence}% (${summary.modelType})`
-      : `${subject}\n\nNo accidents detected over ${summary.framesAnalyzed} frames.\n📍 Location: ${locationName}\n🗺️ Maps: ${mapsLink}\nLatency: ${summary.avgLatency}ms`;
+      ? `${subject}\n\n🆔 Event ID: ${summary.eventID || 'Unknown'}\n📅 Date & Time: ${dateTimeStr}\n📍 Location: ${locationName}\n🗺️ Maps: ${mapsLink}\n\n${driverDetail}${vehicleDetail}${emergencyDetail}\n🕒 Trigger: Frame ${summary.firstDetectionFrame} (${summary.firstDetectionTime}s)\n💥 Collision: ${(summary.accidentVehicles?.[0]?.collisionType || "Unknown")}\n⚡ Impact: ${(summary.accidentVehicles?.[0]?.impactForce || "Unknown")}\n\n🎯 Severity: ${summary.severity}/10 \n Est. Damage: ${summary.damageRange || 'N/A'}\n🤖 Confidence: ${summary.confidence}%`
+      : `${subject}\n\n📅 Date & Time: ${dateTimeStr}\nNo accidents detected over ${summary.framesAnalyzed} frames.\n📍 Location: ${locationName}\n🗺️ Maps: ${mapsLink}\nLatency: ${summary.avgLatency}ms`;
 
     try {
       addLog("Sending Telegram alerts...");
@@ -840,7 +868,13 @@ export default function App() {
 
       <div className="main-content">
         <div className="header">
-          <h2>Offline Media Analysis</h2>
+          <div style={{ display: 'flex', flexDirection: 'column' }}>
+            <h2>Offline Media Analysis</h2>
+            <div style={{ color: '#9ca3af', fontSize: '0.85rem', marginTop: '4px', fontWeight: '500', display: 'flex', gap: '12px' }}>
+              <span>📅 {now.toLocaleDateString()}</span>
+              <span>⏰ {now.toLocaleTimeString()}</span>
+            </div>
+          </div>
           {hasAccident ? (
             <div className="status-badge error">
               ● CRITICAL ALERT

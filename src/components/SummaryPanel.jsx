@@ -55,19 +55,10 @@ export default function SummaryPanel({ summary, sendTelegramAlert, downloadPDFRe
                                 <div style={{ display: 'flex', justifyContent: 'space-between' }}><span>Reporting Authority:</span><strong style={{ color: '#93c5fd' }}>Local Control Room</strong></div>
                             </div>
                         </div>
-
-                        <div style={{ background: 'rgba(0,0,0,0.2)', padding: '12px', borderRadius: '6px' }}>
-                            <span style={{ color: '#9ca3af', display: 'block', marginBottom: '4px', fontSize: '0.8rem' }}>AI Verification Logs</span>
-                            <div style={{ display: 'flex', flexDirection: 'column', gap: '6px', fontSize: '0.85rem', fontFamily: 'monospace' }}>
-                                <div style={{ display: 'flex', justifyContent: 'space-between' }}><span>Engine:</span><strong style={{ color: '#e5e7eb' }}>{summary.modelType}</strong></div>
-                                <div style={{ display: 'flex', justifyContent: 'space-between' }}><span>Avg Latency:</span><strong style={{ color: '#a7f3d0' }}>{summary.avgLatency}ms / frame</strong></div>
-                                <div style={{ display: 'flex', justifyContent: 'space-between' }}><span>Collision Confidence:</span><strong style={{ color: '#fbbf24' }}>{summary.confidence || 96}%</strong></div>
-                            </div>
-                        </div>
                     </div>
 
                     <div style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
-                        <div style={{ border: '1px solid #374151', borderRadius: '8px', overflow: 'hidden', height: '240px', background: 'black' }}>
+                        <div style={{ border: '1px solid #374151', borderRadius: '8px', overflow: 'hidden', height: '140px', background: 'black' }}>
                             <iframe
                                 width="100%"
                                 height="100%"
@@ -90,6 +81,45 @@ export default function SummaryPanel({ summary, sendTelegramAlert, downloadPDFRe
                                 <div style={{ display: 'flex', justifyContent: 'space-between', borderBottom: '1px solid #374151', paddingBottom: '4px' }}><span>Traffic DB:</span><strong style={{ color: '#10b981' }}>✓ Synced</strong></div>
                             </div>
                         </div>
+                    </div>
+                </div>
+
+                {/* New Section for Driver & Vehicle Details */}
+                <div style={{ display: 'grid', gridTemplateColumns: 'minmax(0, 1fr) minmax(0, 1fr) minmax(0, 1fr)', gap: '16px', marginBottom: '24px' }}>
+                    <div style={{ background: 'rgba(59, 130, 246, 0.1)', border: '1px solid rgba(59, 130, 246, 0.3)', padding: '12px', borderRadius: '8px' }}>
+                        <span style={{ color: '#93c5fd', display: 'block', marginBottom: '8px', fontSize: '0.75rem', fontWeight: 'bold', textTransform: 'uppercase' }}>👤 Driver Profile</span>
+                        {summary.driverInfo ? (
+                            <div style={{ fontSize: '0.85rem', display: 'flex', flexDirection: 'column', gap: '4px' }}>
+                                <strong style={{ fontSize: '1rem', color: 'white' }}>{summary.driverInfo.name}</strong>
+                                <span>Age: {summary.driverInfo.age} | Exp: {summary.driverInfo.experienceYears}y</span>
+                                <span>Blood Group: <strong style={{ color: '#ef4444' }}>{summary.driverInfo.bloodGroup}</strong></span>
+                                <span style={{ color: '#9ca3af' }}>DL: {summary.driverInfo.licenseNumber}</span>
+                            </div>
+                        ) : <span>No Driver Assigned</span>}
+                    </div>
+
+                    <div style={{ background: 'rgba(16, 185, 129, 0.1)', border: '1px solid rgba(16, 185, 129, 0.3)', padding: '12px', borderRadius: '8px' }}>
+                        <span style={{ color: '#6ee7b7', display: 'block', marginBottom: '8px', fontSize: '0.75rem', fontWeight: 'bold', textTransform: 'uppercase' }}>🚗 Vehicle Profile</span>
+                        {summary.vehicleInfo ? (
+                            <div style={{ fontSize: '0.85rem', display: 'flex', flexDirection: 'column', gap: '4px' }}>
+                                <strong style={{ fontSize: '1rem', color: 'white' }}>{summary.vehicleInfo.brand} {summary.vehicleInfo.model}</strong>
+                                <span style={{ color: '#fbbf24', fontWeight: 'bold' }}>{summary.vehicleInfo.registrationNumber}</span>
+                                <span>Type: {summary.vehicleInfo.type}</span>
+                                <span style={{ color: '#9ca3af' }}>Insurance Expiry: {summary.vehicleInfo.insuranceExpiry}</span>
+                            </div>
+                        ) : <span>No Vehicle Assigned</span>}
+                    </div>
+
+                    <div style={{ background: 'rgba(239, 68, 68, 0.1)', border: '1px solid rgba(239, 68, 68, 0.3)', padding: '12px', borderRadius: '8px' }}>
+                        <span style={{ color: '#fca5a5', display: 'block', marginBottom: '8px', fontSize: '0.75rem', fontWeight: 'bold', textTransform: 'uppercase' }}>🆘 Emergency Contact</span>
+                        {summary.emergencyContact ? (
+                            <div style={{ fontSize: '0.85rem', display: 'flex', flexDirection: 'column', gap: '4px' }}>
+                                <strong style={{ fontSize: '1rem', color: 'white' }}>{summary.emergencyContact.name}</strong>
+                                <span style={{ color: '#fca5a5' }}>Relation: {summary.emergencyContact.relation}</span>
+                                <strong style={{ color: 'white', marginTop: '4px' }}>📞 {summary.emergencyContact.phone}</strong>
+                                <span style={{ color: '#9ca3af', fontSize: '0.75rem' }}>{summary.emergencyContact.location}</span>
+                            </div>
+                        ) : <span>No Contact Assigned</span>}
                     </div>
                 </div>
 
