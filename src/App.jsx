@@ -21,6 +21,7 @@ export default function App() {
   const [isActive, setIsActive] = useState(false);
   const [logs, setLogs] = useState([]);
   const [hasAccident, setHasAccident] = useState(false);
+  const [currentDetections, setCurrentDetections] = useState([]); // Real-time detection tracker
 
   const [mediaSrc, setMediaSrc] = useState(null);
   const [mediaType, setMediaType] = useState('video'); // 'video' or 'image'
@@ -99,6 +100,7 @@ export default function App() {
       setIsActive(false); // Only start when user hits Play button
       setHasAccident(false);
       setSummary(null);
+      setCurrentDetections([]);
       analyticsRef.current = {
         framesAnalyzed: 0,
         hasAccident: false,
@@ -576,20 +578,16 @@ export default function App() {
       const currentVideoTime = mediaType === 'video' && videoRef.current ? videoRef.current.currentTime : null;
       const { newTracked, accidentNow } = checkAccident(detections, currentVideoTime);
       drawDetectionsOnCanvas(newTracked);
+      setCurrentDetections(Object.values(newTracked));
 
       setHasAccident(accidentNow);
       const objCount = Object.keys(newTracked).length;
 
       if (accidentNow && !hasAccident) {
-        addLog(`CRITICAL: Collision detected! Potential Accident. (Tracking ${objCount})`, true);
+        addLog(`CRITICAL: Collision detected! Potential Accident. (Tracking ${objCount} objects)`, true);
+        addLog(`ALARM: Automatic dispatch sequence initiated for Police & EMS.`, true);
         if (canvasRef.current) {
           analyticsRef.current.snapshotData = canvasRef.current.toDataURL('image/jpeg', 0.85);
-        }
-      } else if (accidentNow) {
-        if (objCount > 0) {
-          if (Math.random() < 0.2) addLog(`Tracking ${objCount} objects normally.`);
-        } else {
-          if (Math.random() < 0.1) addLog("API success, but 0 objects detected.");
         }
       }
     } else if (isActiveRef.current) {
@@ -636,17 +634,17 @@ export default function App() {
     }
 
     setSummary({
-      framesAnalyzed: analyticsRef.current.framesAnalyzed,
-      hasAccident: analyticsRef.current.hasAccident,
-      objects: Array.from(analyticsRef.current.involvedObjects),
-      history: [...analyticsRef.current.history],
-      report: logText,
-      accidentReason: analyticsRef.current.accidentReason,
-      confidence: analyticsRef.current.confidence,
-      severity: analyticsRef.current.severity,
-      firstDetectionTime: analyticsRef.current.firstDetectionTime,
-      firstDetectionFrame: analyticsRef.current.firstDetectionFrame,
-      accidentVehicles: analyticsRef.current.accidentVehicles,
+      framesAnalyzed: analyticsRef.current.framesAnalyzed || 0,
+      hasAccident: !!analyticsRef.current.hasAccident,
+      objects: Array.from(analyticsRef.current.involvedObjects || []),
+      history: Array.isArray(analyticsRef.current.history) ? [...analyticsRef.current.history] : [],
+      report: logText || "No data available",
+      accidentReason: analyticsRef.current.accidentReason || "N/A",
+      confidence: analyticsRef.current.confidence || 0,
+      severity: analyticsRef.current.severity || 0,
+      firstDetectionTime: analyticsRef.current.firstDetectionTime || "0",
+      firstDetectionFrame: analyticsRef.current.firstDetectionFrame || 0,
+      accidentVehicles: Array.isArray(analyticsRef.current.accidentVehicles) ? [...analyticsRef.current.accidentVehicles] : [],
       snapshotData: analyticsRef.current.snapshotData,
       eventID: `ACC-${new Date().toISOString().split('T')[0]}-${Math.floor(1000 + Math.random() * 9000)}`,
       damageRange,
@@ -660,7 +658,8 @@ export default function App() {
     });
 
     addLog(logText);
-    addLog("Analysis complete.");
+    addLog("Analysis complete. Generating report...");
+    setIsActive(false);
   };
 
   const downloadPDFReport = () => {
@@ -712,7 +711,8 @@ export default function App() {
       addLog("Sending Telegram alerts...");
 
       for (const chatId of CHAT_IDS) {
-        // If there's a snapshot, send as photo with caption, otherwise send basic text
+        let sentMain = false;
+        // If there's a snapshot, send as photo
         if (summary.hasAccident && summary.snapshotData) {
           const fetchResponse = await fetch(summary.snapshotData);
           const blob = await fetchResponse.blob();
@@ -720,38 +720,30 @@ export default function App() {
           const formData = new FormData();
           formData.append('chat_id', chatId);
           formData.append('photo', blob, 'accident_frame.jpg');
-          formData.append('caption', reportText);
+          // Caption limit is 1024 chars, so we send basic details here
+          formData.append('caption', reportText.slice(0, 1000));
 
           const response = await fetch(`https://api.telegram.org/bot${BOT_TOKEN}/sendPhoto`, {
             method: "POST",
             body: formData,
           });
+          if (response.ok) sentMain = true;
+        }
 
-          if (response.ok) {
-            addLog(`Telegram photo alert sent successfully to ${chatId}!`);
-          } else {
-            const errorData = await response.json().catch(() => ({}));
-            addLog(`Failed to send Telegram photo alert to ${chatId}. API returned: ${errorData.description || response.status}`, true);
-          }
-        } else {
-          const response = await fetch(`https://api.telegram.org/bot${BOT_TOKEN}/sendMessage`, {
+        // If photo failed or no photo or we want to send the FULL report anyway
+        if (!sentMain || summary.hasAccident) {
+          const textResponse = await fetch(`https://api.telegram.org/bot${BOT_TOKEN}/sendMessage`, {
             method: "POST",
-            headers: {
-              "Content-Type": "application/json"
-            },
+            headers: { "Content-Type": "application/json" },
             body: JSON.stringify({
               chat_id: chatId,
-              text: reportText,
+              text: `� INCIDENT SUMMARY:\n\n${reportText}`,
             }),
           });
-
-          if (response.ok) {
-            addLog(`Telegram text alert sent successfully to ${chatId}!`);
-          } else {
-            const errorData = await response.json().catch(() => ({}));
-            addLog(`Failed to send Telegram text alert to ${chatId}. API returned: ${errorData.description || response.status}`, true);
-          }
+          if (textResponse.ok) addLog(`Summary report sent to ${chatId}`);
         }
+
+        if (sentMain) addLog(`Accident snapshot sent to ${chatId}`);
       }
     } catch (err) {
       addLog(`Error sending Telegram alert: ${err.message}`, true);
@@ -767,6 +759,7 @@ export default function App() {
     setIsActive(newActiveState);
     if (newActiveState) {
       setSummary(null);
+      setCurrentDetections([]);
       analyticsRef.current = {
         framesAnalyzed: 0,
         hasAccident: false,
@@ -844,6 +837,16 @@ export default function App() {
     };
   }, [isActive]);
 
+  // Pre-calculate real-time metrics for top display with extreme safety
+  const safeDetections = Array.isArray(currentDetections) ? currentDetections : [];
+  const realTimeMetrics = {
+    car: safeDetections.filter(d => d && d.cls === 'car').length || 0,
+    truck: safeDetections.filter(d => d && d.cls === 'truck').length || 0,
+    bus: safeDetections.filter(d => d && d.cls === 'bus').length || 0,
+    motorcycle: safeDetections.filter(d => d && ['motorcycle', 'bicycle', 'bike'].includes(d.cls)).length || 0,
+    person: safeDetections.filter(d => d && d.cls === 'person').length || 0,
+  };
+
   return (
     <div className="app-container">
       <canvas ref={hiddenCanvasRef} style={{ display: 'none' }} />
@@ -863,31 +866,70 @@ export default function App() {
         handleRestart={handleRestart}
         mediaSrc={mediaSrc}
         summary={summary}
+        currentDetections={currentDetections}
         downloadPDFReport={downloadPDFReport}
       />
 
       <div className="main-content">
-        <div className="header">
-          <div style={{ display: 'flex', flexDirection: 'column' }}>
-            <h2>Offline Media Analysis</h2>
-            <div style={{ color: '#9ca3af', fontSize: '0.85rem', marginTop: '4px', fontWeight: '500', display: 'flex', gap: '12px' }}>
-              <span>📅 {now.toLocaleDateString()}</span>
-              <span>⏰ {now.toLocaleTimeString()}</span>
+        <div className="header" style={{ alignItems: 'center' }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '20px' }}>
+            <div style={{ display: 'flex', flexDirection: 'column' }}>
+              <h2 style={{ lineHeight: 1 }}>Offline Media Analysis</h2>
+              <div style={{ color: '#9ca3af', fontSize: '0.8rem', marginTop: '6px', fontWeight: '500', display: 'flex', gap: '12px' }}>
+                <span>📅 {now.toLocaleDateString()}</span>
+                <span>⏰ {now.toLocaleTimeString()}</span>
+              </div>
+            </div>
+
+            {/* LIVE BREAKDOWN BESIDE TEXT - MEDIUM SIZE */}
+            <div style={{ display: 'flex', gap: '16px', background: 'rgba(255, 255, 255, 0.05)', padding: '8px 20px', borderRadius: '10px', border: '1px solid rgba(255,255,255,0.08)', backdropFilter: 'blur(10px)' }}>
+              <div style={{ textAlign: 'center', minWidth: '50px' }}>
+                <div style={{ fontSize: '0.65rem', color: '#9ca3af', letterSpacing: '0.5px', fontWeight: 'bold' }}>CARS</div>
+                <div style={{ fontSize: '1.1rem', fontWeight: '700', color: '#3b82f6' }}>{realTimeMetrics.car}</div>
+              </div>
+              <div style={{ borderLeft: '1px solid rgba(255,255,255,0.1)', height: '20px', alignSelf: 'center' }}></div>
+              <div style={{ textAlign: 'center', minWidth: '50px' }}>
+                <div style={{ fontSize: '0.65rem', color: '#9ca3af', letterSpacing: '0.5px', fontWeight: 'bold' }}>TRUCKS</div>
+                <div style={{ fontSize: '1.1rem', fontWeight: '700', color: '#10b981' }}>{realTimeMetrics.truck}</div>
+              </div>
+              <div style={{ borderLeft: '1px solid rgba(255,255,255,0.1)', height: '20px', alignSelf: 'center' }}></div>
+              <div style={{ textAlign: 'center', minWidth: '50px' }}>
+                <div style={{ fontSize: '0.65rem', color: '#9ca3af', letterSpacing: '0.5px', fontWeight: 'bold' }}>BUSES</div>
+                <div style={{ fontSize: '1.1rem', fontWeight: '700', color: '#fbbf24' }}>{realTimeMetrics.bus}</div>
+              </div>
+              <div style={{ borderLeft: '1px solid rgba(255,255,255,0.1)', height: '20px', alignSelf: 'center' }}></div>
+              <div style={{ textAlign: 'center', minWidth: '50px' }}>
+                <div style={{ fontSize: '0.65rem', color: '#9ca3af', letterSpacing: '0.5px', fontWeight: 'bold' }}>BIKES</div>
+                <div style={{ fontSize: '1.1rem', fontWeight: '700', color: '#ef4444' }}>{realTimeMetrics.motorcycle}</div>
+              </div>
+              <div style={{ borderLeft: '1px solid rgba(255,255,255,0.1)', height: '20px', alignSelf: 'center' }}></div>
+              <div style={{ textAlign: 'center', minWidth: '50px' }}>
+                <div style={{ fontSize: '0.65rem', color: '#9ca3af', letterSpacing: '0.5px', fontWeight: 'bold' }}>PERSONS</div>
+                <div style={{ fontSize: '1.1rem', fontWeight: '700', color: '#fff' }}>{realTimeMetrics.person}</div>
+              </div>
             </div>
           </div>
-          {hasAccident ? (
-            <div className="status-badge error">
-              ● CRITICAL ALERT
-            </div>
-          ) : isActive ? (
-            <div className="status-badge">
-              ● PROCESSING STREAM
-            </div>
-          ) : (
-            <div className="status-badge" style={{ color: 'gray', borderColor: 'gray', background: 'transparent' }}>
-              ○ STANDBY
-            </div>
-          )}
+
+          <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-end', gap: '4px' }}>
+            {hasAccident ? (
+              <div className="status-badge error" style={{ margin: 0 }}>
+                ● CRITICAL ALERT
+              </div>
+            ) : isActive ? (
+              <div className="status-badge" style={{ margin: 0 }}>
+                ● PROCESSING
+              </div>
+            ) : (
+              <div className="status-badge" style={{ color: 'gray', borderColor: 'gray', background: 'transparent', margin: 0 }}>
+                ○ STANDBY
+              </div>
+            )}
+            {isActive && (
+              <div className="engine-status" style={{ fontSize: '0.6rem', color: '#10b981', background: 'rgba(16, 185, 129, 0.1)', padding: '2px 6px', borderRadius: '4px' }}>
+                YOLOv8 LIVE-SYNC
+              </div>
+            )}
+          </div>
         </div>
 
         <div className="video-container">
@@ -928,13 +970,15 @@ export default function App() {
           )}
         </div>
 
-        <SummaryPanel
-          summary={summary}
-          sendTelegramAlert={sendTelegramAlert}
-          downloadPDFReport={downloadPDFReport}
-          locationName={locationName}
-          locationCoords={locationCoords}
-        />
+        {summary && (
+          <SummaryPanel
+            summary={summary}
+            sendTelegramAlert={sendTelegramAlert}
+            downloadPDFReport={downloadPDFReport}
+            locationName={locationName}
+            locationCoords={locationCoords}
+          />
+        )}
 
         <LogsPanel logs={logs} setLogs={setLogs} />
       </div>

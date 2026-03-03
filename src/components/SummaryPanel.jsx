@@ -123,6 +123,46 @@ export default function SummaryPanel({ summary, sendTelegramAlert, downloadPDFRe
                     </div>
                 </div>
 
+                {/* Emergency Services Dispatch Section */}
+                <div style={{ background: 'rgba(255, 255, 255, 0.05)', border: '1px solid #374151', padding: '16px', borderRadius: '8px', marginBottom: '24px' }}>
+                    <span style={{ color: '#9ca3af', display: 'block', marginBottom: '16px', fontSize: '0.8rem', fontWeight: 'bold', textTransform: 'uppercase', letterSpacing: '1px' }}>🏢 Emergency Services Dispatch (Demo Purpose)</span>
+                    <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '16px' }}>
+                        <div style={{ background: 'rgba(59, 130, 246, 0.1)', border: '1px solid #3b82f6', padding: '12px', borderRadius: '6px' }}>
+                            <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '8px' }}>
+                                <strong style={{ color: '#3b82f6' }}>🚔 Police</strong>
+                                <span style={{ color: '#10b981', fontSize: '0.75rem' }}>● Transmitted</span>
+                            </div>
+                            <div style={{ fontSize: '0.8rem', color: '#d1d5db' }}>
+                                <div>PCR: Zone-4 Patna</div>
+                                <div>ETA: 4-6 Minutes</div>
+                                <div style={{ marginTop: '4px', fontWeight: 'bold', color: 'white' }}>📞 112 / 100</div>
+                            </div>
+                        </div>
+                        <div style={{ background: 'rgba(239, 44, 44, 0.1)', border: '1px solid #ef4444', padding: '12px', borderRadius: '6px' }}>
+                            <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '8px' }}>
+                                <strong style={{ color: '#ef4444' }}>🚑 Ambulance</strong>
+                                <span style={{ color: '#fbbf24', fontSize: '0.75rem' }}>● In-Route</span>
+                            </div>
+                            <div style={{ fontSize: '0.8rem', color: '#d1d5db' }}>
+                                <div>Apollo Emergency Unit</div>
+                                <div>Distance: 2.4 KM</div>
+                                <div style={{ marginTop: '4px', fontWeight: 'bold', color: 'white' }}>📞 102 / 108</div>
+                            </div>
+                        </div>
+                        <div style={{ background: 'rgba(249, 115, 22, 0.1)', border: '1px solid #f97316', padding: '12px', borderRadius: '6px' }}>
+                            <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '8px' }}>
+                                <strong style={{ color: '#f97316' }}>🚒 Fire Dept</strong>
+                                <span style={{ color: '#9ca3af', fontSize: '0.75rem' }}>○ Standby</span>
+                            </div>
+                            <div style={{ fontSize: '0.8rem', color: '#d1d5db' }}>
+                                <div>Station: Patna Cent.</div>
+                                <div>Status: Notification Sent</div>
+                                <div style={{ marginTop: '4px', fontWeight: 'bold', color: 'white' }}>📞 101</div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
                 <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '24px', marginBottom: '24px', height: '200px' }}>
                     <div style={{ background: 'rgba(0,0,0,0.3)', padding: '12px', borderRadius: '8px' }}>
                         <span style={{ color: '#9ca3af', display: 'block', marginBottom: '8px', fontSize: '0.8rem' }}>Accident Confidence Graph</span>

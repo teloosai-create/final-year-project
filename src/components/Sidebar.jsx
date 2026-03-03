@@ -15,13 +15,35 @@ export default function Sidebar({
     handleRestart,
     mediaSrc,
     summary,
+    currentDetections = [],
     downloadPDFReport
 }) {
-    const hasAccident = summary?.hasAccident;
-    const probability = summary?.confidence ? `${summary.confidence}%` : 'N/A';
-    const severity = summary?.severity ? `${summary.severity}/10` : 'N/A';
-    const vehiclesObj = summary?.history?.reduce((a, b) => Math.max(a, b.vehicles || 0), 0) || 0;
-    const personsDetected = summary?.objects?.includes('person') ? 'Yes' : 'No';
+    // Real-time calculation from current detections
+    const realTimeMetrics = {
+        car: currentDetections.filter(d => d.cls === 'car').length,
+        truck: currentDetections.filter(d => d.cls === 'truck').length,
+        bus: currentDetections.filter(d => d.cls === 'bus').length,
+        motorcycle: currentDetections.filter(d => ['motorcycle', 'bicycle', 'bike'].includes(d.cls)).length,
+        person: currentDetections.filter(d => d.cls === 'person').length,
+        avgConf: currentDetections.length > 0
+            ? Math.round((currentDetections.reduce((a, b) => a + (b.conf || 0.8), 0) / currentDetections.length) * 100)
+            : 0
+    };
+
+    const hasAccident = isActive ? currentDetections.some(d => d.isAccident) : summary?.hasAccident;
+    const probability = isActive
+        ? (realTimeMetrics.avgConf > 0 ? `${realTimeMetrics.avgConf}%` : 'Scanning...')
+        : (summary?.confidence ? `${summary.confidence}%` : 'N/A');
+
+    const severity = summary?.severity ? `${summary.severity}/10` : (isActive && hasAccident ? 'Calculating...' : 'N/A');
+
+    const vehiclesInvolved = isActive
+        ? (currentDetections.length)
+        : (summary?.history?.reduce((a, b) => Math.max(a, b.vehicles || 0), 0) || 0);
+
+    const personsDetected = isActive
+        ? (realTimeMetrics.person > 0 ? 'Yes' : 'No')
+        : (summary?.objects?.includes('person') ? 'Yes' : 'No');
 
     const [copied, setCopied] = useState(false);
     const handleCopy = () => {
@@ -107,8 +129,8 @@ export default function Sidebar({
                 {renderMetricRow('Accident Status', hasAccident === true ? '🔴 Detected' : (hasAccident === false ? '🟢 Safe' : 'Waiting...'), hasAccident ? '#ef4444' : (hasAccident === false ? '#10b981' : '#9ca3af'))}
                 {renderMetricRow('Probability', probability, '#fbbf24')}
                 {renderMetricRow('Severity Level', severity, '#fca5a5')}
-                {renderMetricRow('Vehicles Involved', summary ? vehiclesObj : '...', '#a7f3d0')}
-                {renderMetricRow('Persons Detected', summary ? personsDetected : '...', 'white')}
+                {renderMetricRow('Vehicles Involved', vehiclesInvolved, '#a7f3d0')}
+                {renderMetricRow('Persons Detected', personsDetected, 'white')}
             </div>
 
             {/* 3. Detection Metrics */}
@@ -126,7 +148,7 @@ export default function Sidebar({
                 {renderSectionHeader('4️⃣', 'Environment')}
                 {renderMetricRow('Weather', 'Clear (Auto-detect)', 'white')}
                 {renderMetricRow('Lighting', summary?.lighting || 'Daytime', '#fde047')}
-                {renderMetricRow('Traffic Density', summary ? (vehiclesObj < 5 ? 'Light' : (vehiclesObj < 12 ? 'Moderate' : 'Heavy')) : '...', '#a7f3d0')}
+                {renderMetricRow('Traffic Density', summary ? (vehiclesInvolved < 5 ? 'Light' : (vehiclesInvolved < 12 ? 'Moderate' : 'Heavy')) : '...', '#a7f3d0')}
             </div>
 
             <div style={{ background: 'rgba(0,0,0,0.2)', padding: '16px', borderRadius: '8px' }}>
