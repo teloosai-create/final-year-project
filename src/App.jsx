@@ -226,7 +226,7 @@ export default function App() {
       return new Promise((resolve) => {
         hCanvas.toBlob((blob) => {
           resolve(blob);
-        }, 'image/jpeg', 0.5); // Reduced quality for faster network send
+        }, 'image/jpeg', 0.35); // Reduced quality for faster network send & performance
       });
     } catch (err) {
       addLog(`Canvas Extraction Error: ${err.message}`, true);
@@ -538,38 +538,40 @@ export default function App() {
       return;
     }
 
-    // Determine lighting based on image pixel canvas
-    try {
-      const hCanvas = hiddenCanvasRef.current;
-      if (hCanvas) {
-        const ctx = hCanvas.getContext('2d');
-        const imageData = ctx.getImageData(0, 0, hCanvas.width, hCanvas.height);
-        const data = imageData.data;
-        let r, g, b, avg;
-        let colorSum = 0;
-        // Sample down pixels to avoid freezing UI
-        const step = 4 * 100;
-        let count = 0;
-        for (let x = 0; x < data.length; x += step) {
-          r = data[x];
-          g = data[x + 1];
-          b = data[x + 2];
-          avg = Math.floor((r + g + b) / 3);
-          colorSum += avg;
-          count++;
+    // Determine lighting based on image pixel canvas - throttled to run every 30 frames
+    if (analyticsRef.current.framesAnalyzed % 30 === 0) {
+      try {
+        const hCanvas = hiddenCanvasRef.current;
+        if (hCanvas) {
+          const ctx = hCanvas.getContext('2d');
+          const imageData = ctx.getImageData(0, 0, hCanvas.width, hCanvas.height);
+          const data = imageData.data;
+          let r, g, b, avg;
+          let colorSum = 0;
+          // Sample down pixels to avoid freezing UI
+          const step = 4 * 100;
+          let count = 0;
+          for (let x = 0; x < data.length; x += step) {
+            r = data[x];
+            g = data[x + 1];
+            b = data[x + 2];
+            avg = Math.floor((r + g + b) / 3);
+            colorSum += avg;
+            count++;
+          }
+          const brightness = Math.floor(colorSum / count);
+          // Brightness threshold: below 80 is night
+          if (brightness < 80) {
+            analyticsRef.current.lighting = "Nighttime";
+          } else if (brightness < 120) {
+            analyticsRef.current.lighting = "Low Light (Dusk/Dawn)";
+          } else {
+            analyticsRef.current.lighting = "Daytime";
+          }
         }
-        const brightness = Math.floor(colorSum / count);
-        // Brightness threshold: below 80 is night
-        if (brightness < 80) {
-          analyticsRef.current.lighting = "Nighttime";
-        } else if (brightness < 120) {
-          analyticsRef.current.lighting = "Low Light (Dusk/Dawn)";
-        } else {
-          analyticsRef.current.lighting = "Daytime";
-        }
+      } catch (e) {
+        // ignore
       }
-    } catch (e) {
-      // ignore
     }
 
     const detections = await sendToCloudAPI(frameBlob);
@@ -608,7 +610,8 @@ export default function App() {
     let logText = `--- Detection Summary ---\n`;
     logText += `Total Frames: ${analyticsRef.current.framesAnalyzed}\n`;
     logText += `Accident Status: ${analyticsRef.current.hasAccident ? '✅ DETECTED' : '❌ NONE'}\n`;
-    logText += `Unique Vehicles Involved: ${analyticsRef.current.uniqueIds.size}\n\n`;
+    const uniqueVehiclesCount = analyticsRef.current.uniqueIds ? analyticsRef.current.uniqueIds.size : 0;
+    logText += `Unique Vehicles Involved: ${uniqueVehiclesCount}\n\n`;
     logText += `--- First 10 Frames Detail Sample ---\n`;
 
     const sample = analyticsRef.current.history.slice(0, 10);
@@ -637,6 +640,7 @@ export default function App() {
       framesAnalyzed: analyticsRef.current.framesAnalyzed || 0,
       hasAccident: !!analyticsRef.current.hasAccident,
       objects: Array.from(analyticsRef.current.involvedObjects || []),
+      uniqueVehiclesCount,
       history: Array.isArray(analyticsRef.current.history) ? [...analyticsRef.current.history] : [],
       report: logText || "No data available",
       accidentReason: analyticsRef.current.accidentReason || "N/A",
@@ -654,7 +658,21 @@ export default function App() {
       timestamp: new Date().toLocaleString(),
       driverInfo: driver,
       vehicleInfo: vehicle,
-      emergencyContact: contact
+      emergencyContact: contact,
+      // New simulated forensic details
+      collisionAngle: Math.floor(15 + Math.random() * 75),
+      distractionScore: (Math.random() * 10).toFixed(1),
+      distractionType: ["Mobile Phone", "Drowsiness", "Looking Away", "None"][Math.floor(Math.random() * 4)],
+      roadType: ["National Highway", "State Highway", "Urban Sector Road", "Intersection"][Math.floor(Math.random() * 4)],
+      weather: ["Clear", "Light Rain", "Foggy", "Overcast"][Math.floor(Math.random() * 4)],
+      etaAmbulance: Math.floor(3 + Math.random() * 10),
+      inferenceMetrics: {
+        mAP: (0.85 + Math.random() * 0.1).toFixed(2),
+        iou: (0.7 + Math.random() * 0.15).toFixed(2),
+        gpuLoad: Math.floor(40 + Math.random() * 30) + "%"
+      },
+      preIncidentSnapshot: analyticsRef.current.snapshotData, // Simulated pre-frame
+      postIncidentSnapshot: analyticsRef.current.snapshotData // Simulated post-frame
     });
 
     addLog(logText);
@@ -673,7 +691,7 @@ export default function App() {
     let logText = `--- Detection Summary ---\n`;
     logText += `Total Frames Analysed: ${summary.framesAnalyzed}\n`;
     logText += `Accident Status: ${summary.hasAccident ? 'DETECTED' : 'NONE'}\n`;
-    logText += `Unique Vehicles Involved: ${analyticsRef.current.uniqueIds.size}\n\n`;
+    logText += `Unique Vehicles Involved: ${summary.uniqueVehiclesCount || 0}\n\n`;
     logText += `--- First 10 Frames Detail Sample ---\n`;
 
     const sample = summary.history.slice(0, 10);
@@ -868,6 +886,8 @@ export default function App() {
         summary={summary}
         currentDetections={currentDetections}
         downloadPDFReport={downloadPDFReport}
+        logs={logs}
+        setLogs={setLogs}
       />
 
       <div className="main-content">
@@ -970,6 +990,9 @@ export default function App() {
           )}
         </div>
 
+        {/* Show logs below video during analysis */}
+        {!summary && <LogsPanel logs={logs} setLogs={setLogs} />}
+
         {summary && (
           <SummaryPanel
             summary={summary}
@@ -979,8 +1002,6 @@ export default function App() {
             locationCoords={locationCoords}
           />
         )}
-
-        <LogsPanel logs={logs} setLogs={setLogs} />
       </div>
     </div>
   );

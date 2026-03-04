@@ -1,4 +1,6 @@
-import React, { useState } from 'react';
+
+import React, { useState, useMemo } from 'react';
+import LogsPanel from './LogsPanel';
 
 export default function Sidebar({
     AVAILABLE_CLASSES,
@@ -16,19 +18,24 @@ export default function Sidebar({
     mediaSrc,
     summary,
     currentDetections = [],
-    downloadPDFReport
+    downloadPDFReport,
+    logs,
+    setLogs
 }) {
     // Real-time calculation from current detections
-    const realTimeMetrics = {
-        car: currentDetections.filter(d => d.cls === 'car').length,
-        truck: currentDetections.filter(d => d.cls === 'truck').length,
-        bus: currentDetections.filter(d => d.cls === 'bus').length,
-        motorcycle: currentDetections.filter(d => ['motorcycle', 'bicycle', 'bike'].includes(d.cls)).length,
-        person: currentDetections.filter(d => d.cls === 'person').length,
-        avgConf: currentDetections.length > 0
-            ? Math.round((currentDetections.reduce((a, b) => a + (b.conf || 0.8), 0) / currentDetections.length) * 100)
-            : 0
-    };
+    const realTimeMetrics = useMemo(() => {
+        const safeDets = Array.isArray(currentDetections) ? currentDetections : [];
+        return {
+            car: safeDets.filter(d => d && d.cls === 'car').length,
+            truck: safeDets.filter(d => d && d.cls === 'truck').length,
+            bus: safeDets.filter(d => d && d.cls === 'bus').length,
+            motorcycle: safeDets.filter(d => d && ['motorcycle', 'bicycle', 'bike'].includes(d.cls)).length,
+            person: safeDets.filter(d => d && d.cls === 'person').length,
+            avgConf: safeDets.length > 0
+                ? Math.round((safeDets.reduce((a, b) => a + (b.conf || 0.8), 0) / safeDets.length) * 100)
+                : 0
+        };
+    }, [currentDetections]);
 
     const hasAccident = isActive ? currentDetections.some(d => d.isAccident) : summary?.hasAccident;
     const probability = isActive
@@ -163,6 +170,12 @@ export default function Sidebar({
                         <input type="number" className="input-field" value={frameThreshold} onChange={(e) => setFrameThreshold(Number(e.target.value))} min="1" max="100" style={{ width: '100%', padding: '4px', fontSize: '0.8rem' }} />
                     </div>
                 </div>
+            </div>
+
+            {/* 5. Log History */}
+            <div style={{ background: 'rgba(0,0,0,0.2)', padding: '16px', borderRadius: '8px' }}>
+                {renderSectionHeader('📝', 'Log History')}
+                <LogsPanel logs={logs} setLogs={setLogs} />
             </div>
 
             {/* 6. Generate Shareable Link */}

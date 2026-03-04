@@ -223,21 +223,17 @@ body {
 }
 
 .logs-container {
-  margin-top: auto;
   flex-shrink: 0;
   background: #111827;
   border: 1px solid #374151;
   border-radius: 8px;
-  padding: 16px;
-  max-width: 900px;
+  padding: 12px;
   width: 100%;
-  margin-left: auto;
-  margin-right: auto;
   font-family: 'Courier New', Courier, monospace;
 }
 
 .logs-header {
-  font-size: 0.875rem;
+  font-size: 0.75rem;
   font-weight: 600;
   color: #9ca3af;
   margin-bottom: 12px;
@@ -248,7 +244,7 @@ body {
 }
 
 .logs-list {
-  max-height: 400px;
+  max-height: 250px;
   overflow-y: auto;
   display: flex;
   flex-direction: column;
@@ -256,12 +252,13 @@ body {
 
 .log-item {
   font-family: 'Courier New', Courier, monospace;
-  font-size: 0.85rem;
-  padding: 6px 12px;
+  font-size: 0.75rem;
+  padding: 6px 0px;
   background: transparent;
   border-bottom: 1px solid rgba(255, 255, 255, 0.05);
   display: flex;
-  gap: 12px;
+  flex-direction: column;
+  gap: 4px;
 }
 
 .log-time {
