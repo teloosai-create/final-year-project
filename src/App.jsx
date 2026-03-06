@@ -625,12 +625,31 @@ export default function App() {
     const damageRange = currentSeverity >= 8 ? "₹1,50,000 – ₹5,00,000" : (currentSeverity >= 5 ? "₹50,000 – ₹1,50,000" : "₹5,000 – ₹50,000");
     const avgLatency = apiLatencies.length ? Math.round(apiLatencies.reduce((a, b) => a + b, 0) / apiLatencies.length) : 150;
 
-    // Pick randomized mock data if accident occurred
+    // Pick mock data that matches the accident vehicle type
     let driver = null;
     let vehicle = null;
     let contact = null;
     if (analyticsRef.current.hasAccident) {
-      const idx = Math.floor(Math.random() * drivers.length);
+      let detectedClass = 'car';
+      if (analyticsRef.current.accidentVehicles && analyticsRef.current.accidentVehicles.length > 0) {
+        detectedClass = analyticsRef.current.accidentVehicles[0].cls.toLowerCase();
+      }
+
+      let matchingIndices = [];
+      vehicles.forEach((v, index) => {
+        const vType = v.type.toLowerCase();
+        if (vType === detectedClass || (detectedClass === 'motorcycle' && vType === 'bike')) {
+          matchingIndices.push(index);
+        }
+      });
+
+      let idx;
+      if (matchingIndices.length > 0) {
+        idx = matchingIndices[Math.floor(Math.random() * matchingIndices.length)];
+      } else {
+        idx = Math.floor(Math.random() * drivers.length);
+      }
+
       driver = drivers[idx];
       vehicle = vehicles[idx];
       contact = emergencyContacts.find(c => c.contactId === driver.emergencyContactId) || emergencyContacts[0];
